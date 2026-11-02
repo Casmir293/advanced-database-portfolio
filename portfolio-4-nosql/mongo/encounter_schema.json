@@ -1,0 +1,54 @@
+{
+  "bsonType": "object",
+  "title": "Clinical encounter (Udoka Specialist Hospital)",
+  "required": ["_id", "type", "branch", "startedAt", "patient", "doctor"],
+  "properties": {
+    "type":      { "enum": ["OPD", "EMERGENCY", "INPATIENT"] },
+    "branch":    { "enum": ["ENU", "NSK", "AWK"] },
+    "startedAt": { "bsonType": "date" },
+    "endedAt":   { "bsonType": "date" },
+    "patient": {
+      "bsonType": "object",
+      "required": ["id", "hospitalNo", "name"],
+      "properties": {
+        "id":         { "bsonType": ["int", "long"] },
+        "hospitalNo": { "bsonType": "string", "pattern": "^USH-[0-9]{7}$" },
+        "sex":        { "enum": ["M", "F"] }
+      }
+    },
+    "doctor": {
+      "bsonType": "object",
+      "required": ["id", "name", "specialty"]
+    },
+    "diagnoses": {
+      "bsonType": "array",
+      "maxItems": 10,
+      "items": {
+        "bsonType": "object",
+        "required": ["code", "primary"],
+        "properties": {
+          "code":    { "bsonType": "string", "pattern": "^[A-Z][0-9]{2}(\\.[0-9A-Z]{1,4})?$" },
+          "primary": { "bsonType": "bool" }
+        }
+      }
+    },
+    "labOrders": {
+      "bsonType": "array",
+      "items": {
+        "bsonType": "object",
+        "required": ["orderId", "priority", "status"],
+        "properties": {
+          "priority": { "enum": ["ROUTINE", "URGENT", "STAT"] },
+          "results": {
+            "bsonType": "array",
+            "items": {
+              "bsonType": "object",
+              "required": ["test"],
+              "properties": { "flag": { "enum": ["L", "H", "N", "A"] } }
+            }
+          }
+        }
+      }
+    }
+  }
+}

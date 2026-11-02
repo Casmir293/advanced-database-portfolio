@@ -1,0 +1,69 @@
+=== R1 Appointment slot hold (patient portal) ===
+Two patients pick Dr 30's 10:00 slot on 11 Jan 2027 within seconds of each other.
+redis> SET ush:hold:dr30:2027-01-11T10:00 USH-0000002 NX EX 300
+  True
+redis> SET ush:hold:dr30:2027-01-11T10:00 USH-0000003 NX EX 300
+  None
+redis> TTL ush:hold:dr30:2027-01-11T10:00
+  300
+-- Patient 2 abandons checkout; the hold expires on its own (demo uses a 2 s hold):
+redis> SET ush:hold:dr30:2027-01-11T10:15 USH-0000002 NX EX 2
+  True
+redis> GET ush:hold:dr30:2027-01-11T10:15
+  None
+-- Only on payment confirmation is the booking written to PostgreSQL, whose exclusion
+   constraint remains the source of truth; Redis just stops two people paying for one slot.
+
+=== R2 Cache-aside: patient summary card (shown on every screen the patient appears on) ===
+first read (miss) populates the cache: {'last': 'Ezenwa', 'first': 'Ogechi'}
+redis> TTL ush:patient:USH-0000002:card
+  600
+median latency over 300 reads: MongoDB 223 µs vs Redis 64 µs (3.5x faster)
+-- A new allergy is recorded -> the writer updates MongoDB and deletes the cached card:
+redis> DEL ush:patient:USH-0000002:card
+  1
+redis> EXISTS ush:patient:USH-0000002:card
+  0
+
+=== R3 Emergency triage queue (Enugu A&E) ===
+score = priority * 1e10 + arrival_epoch  -> most urgent first, then first-come-first-served
+redis> ZADD ush:triage:ENU 31793600000 USH-0012001
+  1
+redis> ZADD ush:triage:ENU 21793600060 USH-0012002
+  1
+redis> ZADD ush:triage:ENU 11793600090 USH-0012003
+  1
+redis> ZADD ush:triage:ENU 31793600120 USH-0012004
+  1
+redis> ZADD ush:triage:ENU 21793600150 USH-0012005
+  1
+redis> ZRANGE ush:triage:ENU 0 -1 WITHSCORES
+  ['USH-0012003', '11793600090', 'USH-0012002', '21793600060', 'USH-0012005', '21793600150', 'USH-0012001', '31793600000', 'USH-0012004', '31793600120']
+-- Doctors pull the next patient atomically (two doctors can never get the same one):
+redis> ZPOPMIN ush:triage:ENU
+  ['USH-0012003', '11793600090']
+   -> USH-0012003: Road traffic accident, unconscious
+redis> ZPOPMIN ush:triage:ENU
+  ['USH-0012002', '21793600060']
+   -> USH-0012002: Fever 40C, child
+redis> ZPOPMIN ush:triage:ENU
+  ['USH-0012005', '21793600150']
+   -> USH-0012005: Chest pain
+redis> ZCARD ush:triage:ENU
+  2
+
+=== R4 Bed board: 15 nurses try to claim the last 12 maternity beds at once ===
+claims granted: 12, refused: 3
+redis> HGETALL ush:beds:NSK:Maternity
+  {'total': '12', 'free': '0'}
+-- The Lua script runs atomically on Redis' single command thread, so 'check then decrement'
+   cannot interleave; a plain GET followed by DECR from 15 clients could drive 'free' negative.
+
+=== R5 Durability settings ===
+redis> CONFIG GET appendonly
+  ['appendonly', 'no']
+redis> CONFIG GET save
+  ['save', '3600 1 300 100 60 10000']
+-- Default: RDB snapshots only, so up to minutes of writes can be lost on a crash. Acceptable for
+   holds, caches and the bed board (all rebuildable from PostgreSQL); NOT acceptable for clinical
+   records, which is why Redis is never the system of record here.

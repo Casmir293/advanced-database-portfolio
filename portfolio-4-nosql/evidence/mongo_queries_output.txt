@@ -1,0 +1,274 @@
+
+=== Collections and sizes ===
+encounters     docs=  357225  avgDocBytes= 1019  size=347.3 MB
+patients       docs=   60000  avgDocBytes=  616  size=35.3 MB
+vitals         docs=   13208  avgDocBytes=    0  size=0.1 MB
+ward_contacts  docs=  134638  avgDocBytes=  122  size=15.8 MB
+
+=== One encounter document (the shape of the model) ===
+{
+  _id: 344125,
+  type: 'INPATIENT',
+  notes: 'Assessed by attending doctor. Working diagnosis B50.9. Plan discussed with patient.',
+  branch: 'ENU',
+  doctor: {
+    id: 21,
+    name: 'Dr Favour Ani',
+    specialty: 'Paediatrics'
+  },
+  endedAt: ISODate('2023-01-11T12:00:00.000Z'),
+  patient: {
+    id: 6488,
+    dob: ISODate('2014-06-19T23:00:00.000Z'),
+    sex: 'M',
+    name: 'Oluwaseun Adeyemi',
+    hospitalNo: 'USH-0006488'
+  },
+  admission: {
+    bed: 'B10',
+    ward: "Children's Ward",
+    admittedAt: ISODate('2023-01-03T09:00:00.000Z'),
+    dischargedAt: ISODate('2023-01-11T12:00:00.000Z')
+  },
+  complaint: 'High-grade fever with chills and vomiting',
+  diagnoses: [
+    {
+      code: 'B50.9',
+      primary: true,
+      description: 'Plasmodium falciparum malaria, unspecified'
+    }
+  ],
+  labOrders: [
+    {
+      status: 'RESULTED',
+      orderId: 150315,
+      results: [
+        {
+          flag: 'H',
+          name: 'Haemoglobin',
+          test: 'HB',
+          unit: 'g/dL',
+          value: 17.79,
+          refLow: 11.5,
+          refHigh: 17,
+          resultedAt: ISODate('2023-01-03T12:10:00.000Z')
+        },
+        {
+          flag: 'A',
+          name: 'Malaria parasite (film)',
+          test: 'MP',
+          text: 'P. falciparum seen (++)',
+          resultedAt: ISODate('2023-01-03T12:10:00.000Z')
+        },
+        {
+          flag: 'N',
+          name: 'Platelet count',
+          test: 'PLT',
+          unit: 'x10^9/L',
+          value: 170.68,
+          refLow: 150,
+          refHigh: 400,
+          resultedAt: ISODate('2023-01-03T12:10:00.000Z')
+        }
+      ],
+      priority: 'ROUTINE',
+      orderedAt: ISODate('2023-01-03T09:10:00.000Z')
+    }
+  ],
+  startedAt: ISODate('2023-01-03T09:00:00.000Z'),
+  prescription: {
+    rxId: 313215,
+    items: [
+      {
+        qty: 6,
+        days: 3,
+        dose: '1 tab',
+        drug: 'Artemether/Lumefantrine',
+        form: 'tablet',
+        strength: '80/480mg',
+        dispensed: 6,
+        frequency: 'BD'
+      },
+      {
+        qty: 18,
+        days: 3,
+        dose: '1 g',
+        drug: 'Paracetamol',
+        form: 'tablet',
+        strength: '500mg',
+        dispensed: 18,
+        frequency: 'TDS'
+      }
+    ],
+    status: 'DISPENSED',
+    issuedAt: ISODate('2023-01-11T12:00:00.000Z')
+  }
+}
+
+=== One patient document ===
+{
+  _id: 2,
+  dob: ISODate('1956-01-28T23:00:00.000Z'),
+  sex: 'F',
+  name: {
+    last: 'Ezenwa',
+    first: 'Ogechi'
+  },
+  contact: {
+    email: 'patient2@mail.example',
+    phone: '+2348093290629',
+    address: '58 Emene, Enugu'
+  },
+  summary: {
+    visitCount: 42,
+    lastVisitAt: ISODate('2026-11-02T17:00:58.815Z'),
+    chronicConditions: [
+      'B18.1',
+      'B20',
+      'G40.9',
+      'I10',
+      'J45.9',
+      'N18.9'
+    ]
+  },
+  coverage: [
+    {
+      hmo: 'Eastgate Care HMO',
+      validTo: ISODate('2024-12-31T23:00:00.000Z'),
+      policyNo: 'POL00000002',
+      validFrom: ISODate('2023-12-31T23:00:00.000Z')
+    },
+    {
+      hmo: 'Eastgate Care HMO',
+      validTo: ISODate('2025-12-31T23:00:00.000Z'),
+      policyNo: 'POL00000002',
+      validFrom: ISODate('2024-12-31T23:00:00.000Z')
+    },
+    {
+      hmo: 'Eastgate Care HMO',
+      validTo: ISODate('2026-12-31T23:00:00.000Z'),
+      policyNo: 'POL00000002',
+      validFrom: ISODate('2025-12-31T23:00:00.000Z')
+    }
+  ],
+  genotype: 'AA',
+  allergies: [
+    {
+      allergen: 'Aspirin',
+      severity: 'SEVERE'
+    },
+    {
+      allergen: 'Penicillin',
+      severity: 'SEVERE'
+    }
+  ],
+  bloodGroup: 'A-',
+  hospitalNo: 'USH-0000002',
+  registeredAt: ISODate('2015-01-05T15:16:10.080Z'),
+  registeredBranch: 'ENU',
+  emergencyContacts: [
+    {
+      name: 'Ikenna Ezenwa',
+      phone: '+2348100120567',
+      relationship: 'Child'
+    },
+    {
+      name: 'Nnamdi Ezenwa',
+      phone: '+2348100225296',
+      relationship: 'Guardian'
+    }
+  ]
+}
+
+=== M1 Patient history - explain BEFORE index (collection scan) ===
+{
+  stage: '"SORT"',
+  plan: 'SORT <- COLLSCAN',
+  nReturned: 42,
+  totalDocsExamined: 357225,
+  totalKeysExamined: 0,
+  executionTimeMillis: 53
+}
+
+=== Create indexes ===
+patient_history
+dx_time
+branch_time
+abnormal_results
+clinical_text
+hospital_no_unique
+chronic_recall
+graph_from
+
+=== M1 Patient history - explain AFTER index ===
+{
+  stage: '"FETCH"',
+  plan: 'FETCH <- IXSCAN(patient_history)',
+  nReturned: 42,
+  totalDocsExamined: 42,
+  totalKeysExamined: 42,
+  executionTimeMillis: 3
+}
+
+=== M1 result: last 5 encounters of USH-0000002, one read, no joins ===
+{"_id":357224,"type":"OPD","doctor":{"name":"Dr Ibrahim Agu"},"diagnoses":[{"code":"B50.9"}],"labOrders":[{}],"startedAt":{"$date":"2026-11-02T17:00:58.815Z"},"prescription":{"items":[{"drug":"Artemether/Lumefantrine"},{"drug":"Paracetamol"}]}}
+{"_id":357222,"type":"OPD","doctor":{"name":"Dr Ibrahim Agu"},"diagnoses":[{"code":"B50.9"}],"labOrders":[{}],"startedAt":{"$date":"2026-11-02T17:00:29.348Z"},"prescription":{"items":[{"drug":"Artemether/Lumefantrine"},{"drug":"Paracetamol"}]}}
+{"_id":315199,"type":"OPD","doctor":{"name":"Dr Emeka Igwe"},"diagnoses":[{"code":"M17.9"},{"code":"L30.9"}],"startedAt":{"$date":"2026-10-01T08:02:00Z"},"prescription":{"items":[{"drug":"Ibuprofen"}]}}
+{"_id":314429,"type":"OPD","doctor":{"name":"Dr Obinna Okoye"},"diagnoses":[{"code":"K40.9"}],"startedAt":{"$date":"2026-09-29T07:31:00Z"}}
+{"_id":312809,"type":"OPD","doctor":{"name":"Dr Precious Ukwueze"},"diagnoses":[{"code":"N18.9"}],"labOrders":[{"results":[{"test":"CREAT"},{"test":"K"},{"test":"NA"},{"test":"UREA"}]}],"startedAt":{"$date":"2026-09-22T12:36:00Z"},"prescription":{"items":[{"drug":"Furosemide"}]}}
+
+=== M2 Top 5 primary diagnoses per branch per quarter since 2025 ($unwind, $group, $topN) ===
+24 branch-quarters in 285 ms; first three:
+{"_id":{"branch":"AWK","quarter":{"$date":"2024-12-31T23:00:00Z"}},"top5":[{"code":"Z34.9","cases":683},{"code":"B54","cases":541},{"code":"B50.9","cases":409},{"code":"D64.9","cases":263},{"code":"N39.0","cases":257}]}
+{"_id":{"branch":"AWK","quarter":{"$date":"2025-03-31T23:00:00Z"}},"top5":[{"code":"Z34.9","cases":694},{"code":"B54","cases":469},{"code":"B50.9","cases":441},{"code":"N39.0","cases":280},{"code":"D64.9","cases":258}]}
+{"_id":{"branch":"AWK","quarter":{"$date":"2025-06-30T23:00:00Z"}},"top5":[{"code":"Z34.9","cases":806},{"code":"B54","cases":582},{"code":"B50.9","cases":427},{"code":"N39.0","cases":282},{"code":"D64.9","cases":274}]}
+
+=== M3 Abnormal lab results in the last 7 days at Enugu (partial index) ===
+496 abnormal results in 81 ms (SQL Q4 returned 496); first three:
+{"hospitalNo":"USH-0019925","test":"Serum potassium","value":2.99,"flag":"L","priority":"STAT","at":{"$date":"2026-10-31T23:34:25.560Z"}}
+{"hospitalNo":"USH-0019925","test":"Serum sodium","value":133.21,"flag":"L","priority":"STAT","at":{"$date":"2026-10-31T23:34:25.560Z"}}
+{"hospitalNo":"USH-0043620","test":"Fasting blood sugar","value":5.87,"flag":"H","priority":"ROUTINE","at":{"$date":"2026-10-31T18:10:00Z"}}
+plan: PROJECTION_DEFAULT <- FETCH <- IXSCAN(abnormal_results)
+
+=== M4 Hypertension recall list from the embedded patient summary (no join needed) ===
+count = 714  (SQL Q7 returned 714)
+{
+  stage: '"FETCH"',
+  plan: 'FETCH <- IXSCAN(chronic_recall)',
+  nReturned: 714,
+  totalDocsExamined: 714,
+  totalKeysExamined: 714,
+  executionTimeMillis: 2
+}
+
+=== M5 Full-text search of clinical notes / complaints ===
+{"_id":107243,"patient":{"hospitalNo":"USH-0019552"},"complaint":"Fever with bleeding tendency","startedAt":{"$date":"2024-06-11T12:02:00Z"},"score":1.3333333333333333}
+{"_id":119639,"patient":{"hospitalNo":"USH-0022121"},"complaint":"Fever with bleeding tendency","startedAt":{"$date":"2024-08-07T07:19:00Z"},"score":1.3333333333333333}
+{"_id":317496,"patient":{"hospitalNo":"USH-0042992"},"complaint":"Fever with bleeding tendency","startedAt":{"$date":"2026-10-09T08:52:00Z"},"score":1.3333333333333333}
+
+=== M6 Time-series: all inpatients' vitals with a 1-hour moving average and early-warning flag ($setWindowFields) ===
+3 of 68 inpatients trigger an early-warning alert in the last hour: USH-0002070, USH-0008199, USH-0049941
+{"ts":{"$date":"2026-11-02T08:00:00Z"},"hr":115,"spo2":90,"tempC":38.8,"patient":"USH-0002070","bed":"B07","hr1h":116,"spo21h":89.6,"alert":true}
+{"ts":{"$date":"2026-11-02T07:45:00Z"},"hr":118,"spo2":90,"tempC":38.5,"patient":"USH-0002070","bed":"B07","hr1h":116,"spo21h":89.6,"alert":true}
+{"ts":{"$date":"2026-11-02T07:30:00Z"},"hr":114,"spo2":89,"tempC":38.7,"patient":"USH-0002070","bed":"B07","hr1h":118,"spo21h":89.8,"alert":true}
+{"ts":{"$date":"2026-11-02T07:15:00Z"},"hr":118,"spo2":90,"tempC":39.3,"patient":"USH-0002070","bed":"B07","hr1h":118,"spo21h":90,"alert":true}
+time-series storage: 13208 measurements packed into 162 buckets (avg bucket 823 bytes)
+
+=== M7 Graph: Lassa-fever contact tracing with $graphLookup (21-day window) ===
+index case: USH-0050167 (Tunde Igwe), Ward A (Male Medical) bed B10
+degree 1 contacts: 13  wards: ["Ward A (Male Medical)"]
+degree 2 contacts: 10  wards: ["Ward A (Male Medical)"]
+
+=== M8 Schema validation rejects a malformed encounter ===
+rejected: Document failed validation
+["branch","startedAt","patient"]
+
+=== M9 Atomic single-document update: dispense a prescription and append a lab result together ===
+{
+  acknowledged: true,
+  insertedId: null,
+  matchedCount: 1,
+  modifiedCount: 1,
+  upsertedCount: 0
+}
+second dispense attempt matched 0 document(s) -> no double dispensing
