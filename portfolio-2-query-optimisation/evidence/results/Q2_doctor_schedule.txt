@@ -1,0 +1,32 @@
+SET search_path=hms;
+SET
+Q2_doctor_schedule: first 15 rows (full count in benchmark_results.md)
+SELECT * FROM (
+-- Q2 (optimised): sargable half-open range instead of a cast on the column,
+-- served by a composite B-tree index on appointment(doctor_id, scheduled_at).
+SELECT a.scheduled_at::time AS slot, p.hospital_no,
+       p.first_name || ' ' || p.last_name AS patient, a.status, a.reason
+FROM appointment a JOIN patient p USING (patient_id)
+WHERE a.doctor_id = 78
+  AND a.scheduled_at >= TIMESTAMPTZ '2026-11-03 00:00+01'
+  AND a.scheduled_at <  TIMESTAMPTZ '2026-11-04 00:00+01'
+ORDER BY a.scheduled_at
+) q LIMIT 15;
+   slot   | hospital_no |      patient      | status |     reason      
+----------+-------------+-------------------+--------+-----------------
+ 08:00:00 | USH-0031352 | Kenechukwu Ezenwa | BOOKED | New complaint
+ 08:15:00 | USH-0029368 | Oluchi Obiora     | BOOKED | Follow-up visit
+ 10:30:00 | USH-0041311 | Fatima Eze        | BOOKED | Follow-up visit
+ 10:45:00 | USH-0033170 | Tochukwu Ngwu     | BOOKED | New complaint
+ 11:00:00 | USH-0036359 | Blessing Ezeh     | BOOKED | New complaint
+ 11:30:00 | USH-0030712 | Favour Nwosu      | BOOKED | New complaint
+ 11:45:00 | USH-0043709 | Emmanuel Eze      | BOOKED | Follow-up visit
+ 12:00:00 | USH-0036808 | Arinze Ogbu       | BOOKED | New complaint
+ 13:00:00 | USH-0026671 | Munachi Ogbonna   | BOOKED | New complaint
+ 13:15:00 | USH-0051447 | Grace Mbah        | BOOKED | New complaint
+ 13:45:00 | USH-0026636 | Obinna Ugwu       | BOOKED | Follow-up visit
+ 14:15:00 | USH-0044855 | Chidinma Igwe     | BOOKED | Follow-up visit
+ 15:30:00 | USH-0032569 | Tochukwu Adeyemi  | BOOKED | New complaint
+ 15:45:00 | USH-0049160 | Joy Onyekwere     | BOOKED | New complaint
+(14 rows)
+

@@ -1,0 +1,29 @@
+SET search_path=hms;
+SET
+Q5_patient_search: first 15 rows (full count in benchmark_results.md)
+SELECT * FROM (
+-- Q5 (optimised): SQL unchanged; pg_trgm GIN indexes make leading-wildcard ILIKE indexable.
+SELECT hospital_no, first_name, last_name, date_of_birth, phone
+FROM patient
+WHERE last_name ILIKE '%chukw%' AND first_name ILIKE '%emek%'
+ORDER BY last_name, first_name
+) q LIMIT 15;
+ hospital_no | first_name  | last_name | date_of_birth |     phone      
+-------------+-------------+-----------+---------------+----------------
+ USH-0027442 | Chukwuemeka | Chukwu    | 2003-11-03    | +2348087171491
+ USH-0034802 | Chukwuemeka | Chukwu    | 1999-08-24    | +2348078994817
+ USH-0021481 | Chukwuemeka | Chukwu    | 1950-07-03    | +2348075809600
+ USH-0025889 | Chukwuemeka | Chukwu    | 2014-05-07    | +2348085358779
+ USH-0028472 | Chukwuemeka | Chukwu    | 1984-07-16    | +2348029320685
+ USH-0029391 | Chukwuemeka | Chukwu    | 1993-08-30    | +2348007300293
+ USH-0003407 | Chukwuemeka | Chukwu    | 1966-06-16    | +2348044017161
+ USH-0020317 | Chukwuemeka | Chukwu    | 1946-01-04    | +2348046060482
+ USH-0016413 | Chukwuemeka | Chukwu    | 1997-10-30    | +2348049465284
+ USH-0024342 | Chukwuemeka | Chukwu    | 1973-07-06    | +2348027940177
+ USH-0019261 | Chukwuemeka | Chukwu    | 1979-01-14    | +2348060684658
+ USH-0015564 | Chukwuemeka | Chukwu    | 1954-07-11    | +2348096533799
+ USH-0028520 | Chukwuemeka | Chukwu    | 1946-03-04    | +2348028813588
+ USH-0015239 | Chukwuemeka | Chukwu    | 1960-12-02    | +2348061458874
+ USH-0037636 | Chukwuemeka | Chukwu    | 1948-05-22    | +2348074132274
+(15 rows)
+

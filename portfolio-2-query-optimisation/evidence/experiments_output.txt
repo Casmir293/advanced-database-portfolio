@@ -1,0 +1,336 @@
+SET search_path = hms, public;
+SET
+SET random_page_cost = 1.1;
+SET
+=== E1  Selectivity decides access path: index for 1 day, seq scan for 1 year ===
+BEGIN;
+BEGIN
+CREATE INDEX tmp_invoice_issued_btree ON invoice (issued_at);
+CREATE INDEX
+ANALYZE invoice;
+ANALYZE
+EXPLAIN (ANALYZE, COSTS ON, BUFFERS) SELECT count(*), max(invoice_id) FROM invoice
+WHERE issued_at >= '2025-06-02' AND issued_at < '2025-06-03';
+                                                                          QUERY PLAN                                                                          
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=299.81..299.82 rows=1 width=16) (actual time=0.092..0.094 rows=1 loops=1)
+   Buffers: shared hit=353 read=4
+   ->  Index Scan using tmp_invoice_issued_btree on invoice  (cost=0.42..298.45 rows=273 width=8) (actual time=0.013..0.072 rows=387 loops=1)
+         Index Cond: ((issued_at >= '2025-06-02 00:00:00+01'::timestamp with time zone) AND (issued_at < '2025-06-03 00:00:00+01'::timestamp with time zone))
+         Buffers: shared hit=353 read=4
+ Planning:
+   Buffers: shared hit=29 read=3
+ Planning Time: 0.152 ms
+ Execution Time: 0.110 ms
+(9 rows)
+
+EXPLAIN (ANALYZE, COSTS ON, BUFFERS) SELECT count(*), max(invoice_id) FROM invoice
+WHERE issued_at >= '2025-01-01' AND issued_at < '2026-01-01';
+                                                                                   QUERY PLAN                                                                                   
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Finalize Aggregate  (cost=9818.57..9818.58 rows=1 width=16) (actual time=7.890..8.592 rows=1 loops=1)
+   Buffers: shared hit=532 read=689
+   ->  Gather  (cost=9818.35..9818.56 rows=2 width=16) (actual time=7.856..8.585 rows=3 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         Buffers: shared hit=532 read=689
+         ->  Partial Aggregate  (cost=8818.35..8818.36 rows=1 width=16) (actual time=5.993..5.995 rows=1 loops=3)
+               Buffers: shared hit=532 read=689
+               ->  Parallel Bitmap Heap Scan on invoice  (cost=1313.43..8611.62 rows=41346 width=8) (actual time=2.511..4.737 rows=33005 loops=3)
+                     Recheck Cond: ((issued_at >= '2025-01-01 00:00:00+01'::timestamp with time zone) AND (issued_at < '2026-01-01 00:00:00+01'::timestamp with time zone))
+                     Heap Blocks: exact=334
+                     Buffers: shared hit=532 read=689
+                     ->  Bitmap Index Scan on tmp_invoice_issued_btree  (cost=0.00..1288.62 rows=99230 width=0) (actual time=4.160..4.164 rows=99016 loops=1)
+                           Index Cond: ((issued_at >= '2025-01-01 00:00:00+01'::timestamp with time zone) AND (issued_at < '2026-01-01 00:00:00+01'::timestamp with time zone))
+                           Buffers: shared hit=4 read=264
+ Planning Time: 0.027 ms
+ Execution Time: 8.609 ms
+(17 rows)
+
+ROLLBACK;
+ROLLBACK
+=== E2  BRIN vs B-tree on an append-only timestamp column ===
+SELECT attname, round(correlation::numeric, 4) AS correlation
+FROM pg_stats WHERE schemaname = 'hms' AND tablename = 'invoice' AND attname IN ('issued_at', 'patient_id');
+  attname   | correlation 
+------------+-------------
+ issued_at  |      0.1100
+ patient_id |      0.0296
+(2 rows)
+
+BEGIN;
+BEGIN
+CREATE INDEX tmp_btree ON invoice (issued_at);
+CREATE INDEX
+CREATE INDEX tmp_brin  ON invoice USING brin (issued_at) WITH (pages_per_range = 32);
+CREATE INDEX
+SELECT relname, pg_size_pretty(pg_relation_size(oid)) AS size FROM pg_class WHERE relname IN ('tmp_btree', 'tmp_brin');
+  relname  |  size   
+-----------+---------
+ tmp_btree | 7720 kB
+ tmp_brin  | 24 kB
+(2 rows)
+
+DROP INDEX tmp_btree;
+DROP INDEX
+EXPLAIN (ANALYZE, BUFFERS) SELECT count(*) FROM invoice
+WHERE issued_at >= '2025-06-01' AND issued_at < '2025-07-01';
+                                                                             QUERY PLAN                                                                             
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=7869.04..7869.05 rows=1 width=8) (actual time=4.389..4.390 rows=1 loops=1)
+   Buffers: shared hit=539 read=224
+   ->  Bitmap Heap Scan on invoice  (cost=5.64..7849.23 rows=7923 width=0) (actual time=0.067..4.163 rows=7943 loops=1)
+         Recheck Cond: ((issued_at >= '2025-06-01 00:00:00+01'::timestamp with time zone) AND (issued_at < '2025-07-01 00:00:00+01'::timestamp with time zone))
+         Rows Removed by Index Recheck: 73059
+         Heap Blocks: lossy=758
+         Buffers: shared hit=539 read=224
+         ->  Bitmap Index Scan on tmp_brin  (cost=0.00..3.66 rows=77706 width=0) (actual time=0.022..0.022 rows=7580 loops=1)
+               Index Cond: ((issued_at >= '2025-06-01 00:00:00+01'::timestamp with time zone) AND (issued_at < '2025-07-01 00:00:00+01'::timestamp with time zone))
+               Buffers: shared hit=5
+ Planning:
+   Buffers: shared hit=20
+ Planning Time: 0.107 ms
+ Execution Time: 4.397 ms
+(14 rows)
+
+ROLLBACK;
+ROLLBACK
+=== E3  NOT IN pitfall 1: wrong answer when the subquery can return NULL ===
+SELECT count(*) AS not_in_result
+FROM appointment a
+WHERE a.scheduled_at >= '2026-10-01' AND a.scheduled_at < '2026-11-01'
+  AND a.appt_id NOT IN (SELECT e.appt_id FROM encounter e
+                        WHERE e.started_at >= '2026-10-01' AND e.started_at < '2026-11-01');
+ not_in_result 
+---------------
+             0
+(1 row)
+
+SELECT count(*) AS not_exists_result
+FROM appointment a
+WHERE a.scheduled_at >= '2026-10-01' AND a.scheduled_at < '2026-11-01'
+  AND NOT EXISTS (SELECT 1 FROM encounter e WHERE e.appt_id = a.appt_id);
+ not_exists_result 
+-------------------
+              2063
+(1 row)
+
+=== E4  NOT IN pitfall 2: when the subquery hash does not fit in work_mem ===
+SET work_mem = '64kB';
+SET
+EXPLAIN (ANALYZE, COSTS OFF)
+SELECT count(*) FROM patient p
+WHERE p.reg_branch_id = 3
+  AND p.patient_id NOT IN (SELECT e.patient_id FROM encounter e WHERE e.started_at >= '2026-10-01');
+                                                                    QUERY PLAN                                                                     
+---------------------------------------------------------------------------------------------------------------------------------------------------
+ Finalize Aggregate (actual time=4000.442..4001.199 rows=1 loops=1)
+   ->  Gather (actual time=3984.950..4001.197 rows=2 loops=1)
+         Workers Planned: 1
+         Workers Launched: 1
+         ->  Partial Aggregate (actual time=3991.765..3991.766 rows=1 loops=2)
+               ->  Parallel Seq Scan on patient p (actual time=6.189..3991.524 rows=3204 loops=2)
+                     Filter: ((reg_branch_id = 3) AND (NOT (SubPlan 1)))
+                     Rows Removed by Filter: 26796
+                     SubPlan 1
+                       ->  Materialize (actual time=0.001..0.730 rows=8766 loops=8003)
+                             ->  Index Only Scan using ix_encounter_patient_started on encounter e (actual time=0.002..3.222 rows=8679 loops=1011)
+                                   Index Cond: (started_at >= '2026-10-01 00:00:00+01'::timestamp with time zone)
+                                   Heap Fetches: 0
+ Planning Time: 0.721 ms
+ Execution Time: 4001.386 ms
+(15 rows)
+
+EXPLAIN (ANALYZE, COSTS OFF)
+SELECT count(*) FROM patient p
+WHERE p.reg_branch_id = 3
+  AND NOT EXISTS (SELECT 1 FROM encounter e WHERE e.patient_id = p.patient_id AND e.started_at >= '2026-10-01');
+                                                                 QUERY PLAN                                                                 
+--------------------------------------------------------------------------------------------------------------------------------------------
+ Finalize Aggregate (actual time=7.241..7.806 rows=1 loops=1)
+   ->  Gather (actual time=7.226..7.804 rows=2 loops=1)
+         Workers Planned: 1
+         Workers Launched: 1
+         ->  Partial Aggregate (actual time=6.184..6.185 rows=1 loops=2)
+               ->  Nested Loop Anti Join (actual time=0.810..6.099 rows=3204 loops=2)
+                     ->  Parallel Seq Scan on patient p (actual time=0.802..2.245 rows=4002 loops=2)
+                           Filter: (reg_branch_id = 3)
+                           Rows Removed by Filter: 25998
+                     ->  Index Only Scan using ix_encounter_patient_started on encounter e (actual time=0.001..0.001 rows=0 loops=8003)
+                           Index Cond: ((patient_id = p.patient_id) AND (started_at >= '2026-10-01 00:00:00+01'::timestamp with time zone))
+                           Heap Fetches: 0
+ Planning Time: 0.233 ms
+ Execution Time: 7.817 ms
+(14 rows)
+
+RESET work_mem;
+RESET
+=== E5  Cardinality estimation with correlated columns (extended statistics) ===
+EXPLAIN (ANALYZE, TIMING OFF) SELECT * FROM encounter WHERE doctor_id = 78 AND branch_id = 3;
+                                                QUERY PLAN                                                 
+-----------------------------------------------------------------------------------------------------------
+ Gather  (cost=1000.00..15504.23 rows=786 width=156) (actual rows=4864 loops=1)
+   Workers Planned: 2
+   Workers Launched: 2
+   ->  Parallel Seq Scan on encounter  (cost=0.00..14425.63 rows=328 width=156) (actual rows=1621 loops=3)
+         Filter: ((doctor_id = 78) AND (branch_id = 3))
+         Rows Removed by Filter: 117452
+ Planning Time: 0.043 ms
+ Execution Time: 15.291 ms
+(8 rows)
+
+BEGIN;
+BEGIN
+CREATE STATISTICS st_encounter_doctor_branch (dependencies) ON doctor_id, branch_id FROM encounter;
+CREATE STATISTICS
+ANALYZE encounter;
+ANALYZE
+EXPLAIN (ANALYZE, TIMING OFF) SELECT * FROM encounter WHERE doctor_id = 78 AND branch_id = 3;
+                                                 QUERY PLAN                                                 
+------------------------------------------------------------------------------------------------------------
+ Gather  (cost=1000.00..15922.13 rows=4965 width=156) (actual rows=4864 loops=1)
+   Workers Planned: 2
+   Workers Launched: 2
+   ->  Parallel Seq Scan on encounter  (cost=0.00..14425.63 rows=2069 width=156) (actual rows=1621 loops=3)
+         Filter: ((doctor_id = 78) AND (branch_id = 3))
+         Rows Removed by Filter: 117452
+ Planning Time: 0.052 ms
+ Execution Time: 13.904 ms
+(8 rows)
+
+ROLLBACK;
+ROLLBACK
+ANALYZE encounter;
+ANALYZE
+=== E6  Covering index -> Index Only Scan (no heap access) ===
+EXPLAIN (ANALYZE, BUFFERS) SELECT status, count(*) FROM appointment
+WHERE doctor_id = 78 AND scheduled_at >= '2026-01-01' AND scheduled_at < '2026-11-01' GROUP BY status;
+                                                                                          QUERY PLAN                                                                                           
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ HashAggregate  (cost=1335.92..1335.96 rows=4 width=17) (actual time=1.802..1.803 rows=3 loops=1)
+   Group Key: status
+   Batches: 1  Memory Usage: 24kB
+   Buffers: shared hit=1 read=1012
+   ->  Bitmap Heap Scan on appointment  (cost=25.62..1329.06 rows=1372 width=9) (actual time=0.186..1.655 rows=1662 loops=1)
+         Recheck Cond: ((doctor_id = 78) AND (scheduled_at >= '2026-01-01 00:00:00+01'::timestamp with time zone) AND (scheduled_at < '2026-11-01 00:00:00+01'::timestamp with time zone))
+         Heap Blocks: exact=1004
+         Buffers: shared hit=1 read=1012
+         ->  Bitmap Index Scan on ix_appointment_doctor_time  (cost=0.00..25.27 rows=1372 width=0) (actual time=0.110..0.110 rows=1662 loops=1)
+               Index Cond: ((doctor_id = 78) AND (scheduled_at >= '2026-01-01 00:00:00+01'::timestamp with time zone) AND (scheduled_at < '2026-11-01 00:00:00+01'::timestamp with time zone))
+               Buffers: shared hit=1 read=8
+ Planning:
+   Buffers: shared hit=26 read=1
+ Planning Time: 0.154 ms
+ Execution Time: 1.813 ms
+(15 rows)
+
+CREATE INDEX tmp_appt_cover ON appointment (doctor_id, scheduled_at) INCLUDE (status);
+CREATE INDEX
+VACUUM (ANALYZE) appointment;
+VACUUM
+EXPLAIN (ANALYZE, BUFFERS) SELECT status, count(*) FROM appointment
+WHERE doctor_id = 78 AND scheduled_at >= '2026-01-01' AND scheduled_at < '2026-11-01' GROUP BY status;
+                                                                                       QUERY PLAN                                                                                        
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ HashAggregate  (cost=54.51..54.55 rows=4 width=17) (actual time=0.219..0.220 rows=3 loops=1)
+   Group Key: status
+   Batches: 1  Memory Usage: 24kB
+   Buffers: shared hit=1 read=12
+   ->  Index Only Scan using tmp_appt_cover on appointment  (cost=0.42..46.68 rows=1567 width=9) (actual time=0.011..0.108 rows=1662 loops=1)
+         Index Cond: ((doctor_id = 78) AND (scheduled_at >= '2026-01-01 00:00:00+01'::timestamp with time zone) AND (scheduled_at < '2026-11-01 00:00:00+01'::timestamp with time zone))
+         Heap Fetches: 0
+         Buffers: shared hit=1 read=12
+ Planning:
+   Buffers: shared hit=17
+ Planning Time: 0.101 ms
+ Execution Time: 0.228 ms
+(12 rows)
+
+DROP INDEX tmp_appt_cover;
+DROP INDEX
+=== E7  Same join, three algorithms (planner choice vs forced alternatives) ===
+EXPLAIN (ANALYZE, COSTS ON) SELECT e.encounter_id, d.icd10_code
+FROM encounter e JOIN diagnosis d ON d.encounter_id = e.encounter_id AND d.is_primary
+WHERE e.branch_id = 1 AND e.started_at >= '2026-10-01' AND e.started_at < '2026-10-08';
+                                                                           QUERY PLAN                                                                           
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Nested Loop  (cost=0.84..9809.53 rows=1323 width=13) (actual time=0.386..6.062 rows=1322 loops=1)
+   ->  Index Scan using ix_encounter_patient_started on encounter e  (cost=0.42..7195.23 rows=1324 width=8) (actual time=0.005..4.078 rows=1322 loops=1)
+         Index Cond: ((started_at >= '2026-10-01 00:00:00+01'::timestamp with time zone) AND (started_at < '2026-10-08 00:00:00+01'::timestamp with time zone))
+         Filter: (branch_id = 1)
+         Rows Removed by Filter: 763
+   ->  Index Scan using one_primary_diagnosis on diagnosis d  (cost=0.42..1.96 rows=1 width=13) (actual time=0.001..0.001 rows=1 loops=1322)
+         Index Cond: (encounter_id = e.encounter_id)
+ Planning Time: 0.805 ms
+ Execution Time: 6.094 ms
+(9 rows)
+
+BEGIN;
+BEGIN
+SET LOCAL enable_nestloop = off;
+SET
+EXPLAIN (ANALYZE, COSTS ON) SELECT e.encounter_id, d.icd10_code
+FROM encounter e JOIN diagnosis d ON d.encounter_id = e.encounter_id AND d.is_primary
+WHERE e.branch_id = 1 AND e.started_at >= '2026-10-01' AND e.started_at < '2026-10-08';
+                                                                                    QUERY PLAN                                                                                    
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Gather  (cost=8127.34..13872.27 rows=1323 width=13) (actual time=19.866..23.370 rows=1322 loops=1)
+   Workers Planned: 1
+   Workers Launched: 1
+   ->  Parallel Hash Join  (cost=7127.34..12739.97 rows=778 width=13) (actual time=18.972..21.839 rows=661 loops=2)
+         Hash Cond: (d.encounter_id = e.encounter_id)
+         ->  Parallel Seq Scan on diagnosis d  (cost=0.00..5061.48 rows=209961 width=13) (actual time=0.003..13.064 rows=178610 loops=2)
+               Filter: is_primary
+               Rows Removed by Filter: 45576
+         ->  Parallel Hash  (cost=7117.60..7117.60 rows=779 width=8) (actual time=2.888..2.888 rows=661 loops=2)
+               Buckets: 2048  Batches: 1  Memory Usage: 112kB
+               ->  Parallel Bitmap Heap Scan on encounter e  (cost=5088.76..7117.60 rows=779 width=8) (actual time=2.740..2.833 rows=661 loops=2)
+                     Recheck Cond: ((started_at >= '2026-10-01 00:00:00+01'::timestamp with time zone) AND (started_at < '2026-10-08 00:00:00+01'::timestamp with time zone))
+                     Filter: (branch_id = 1)
+                     Rows Removed by Filter: 382
+                     Heap Blocks: exact=93
+                     ->  Bitmap Index Scan on ix_encounter_patient_started  (cost=0.00..5088.43 rows=2052 width=0) (actual time=3.568..3.568 rows=2085 loops=1)
+                           Index Cond: ((started_at >= '2026-10-01 00:00:00+01'::timestamp with time zone) AND (started_at < '2026-10-08 00:00:00+01'::timestamp with time zone))
+ Planning Time: 0.058 ms
+ Execution Time: 23.403 ms
+(19 rows)
+
+SET LOCAL enable_hashjoin = off;
+SET
+EXPLAIN (ANALYZE, COSTS ON) SELECT e.encounter_id, d.icd10_code
+FROM encounter e JOIN diagnosis d ON d.encounter_id = e.encounter_id AND d.is_primary
+WHERE e.branch_id = 1 AND e.started_at >= '2026-10-01' AND e.started_at < '2026-10-08';
+                                                                                 QUERY PLAN                                                                                 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Gather  (cost=8264.30..16228.18 rows=1323 width=13) (actual time=21.726..25.277 rows=1322 loops=1)
+   Workers Planned: 1
+   Workers Launched: 1
+   ->  Merge Join  (cost=7264.30..15095.88 rows=778 width=13) (actual time=20.927..23.660 rows=661 loops=2)
+         Merge Cond: (d.encounter_id = e.encounter_id)
+         ->  Parallel Index Scan using one_primary_diagnosis on diagnosis d  (cost=0.42..7294.28 rows=209961 width=13) (actual time=0.105..14.665 rows=178474 loops=2)
+         ->  Sort  (cost=7263.88..7267.19 rows=1324 width=8) (actual time=4.381..4.410 rows=1322 loops=2)
+               Sort Key: e.encounter_id
+               Sort Method: quicksort  Memory: 49kB
+               Worker 0:  Sort Method: quicksort  Memory: 49kB
+               ->  Index Scan using ix_encounter_patient_started on encounter e  (cost=0.42..7195.23 rows=1324 width=8) (actual time=0.006..4.274 rows=1322 loops=2)
+                     Index Cond: ((started_at >= '2026-10-01 00:00:00+01'::timestamp with time zone) AND (started_at < '2026-10-08 00:00:00+01'::timestamp with time zone))
+                     Filter: (branch_id = 1)
+                     Rows Removed by Filter: 763
+ Planning Time: 0.059 ms
+ Execution Time: 25.313 ms
+(16 rows)
+
+ROLLBACK;
+ROLLBACK
+=== E8  Materialized view staleness and concurrent refresh ===
+SELECT max(month) AS latest_month_in_mv FROM mv_monthly_revenue;
+   latest_month_in_mv   
+------------------------
+ 2026-11-01 00:00:00+01
+(1 row)
+
+Timing is on.
+REFRESH MATERIALIZED VIEW CONCURRENTLY mv_monthly_revenue;
+REFRESH MATERIALIZED VIEW
+Time: 1588.019 ms (00:01.588)
+Timing is off.

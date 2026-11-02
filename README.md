@@ -23,7 +23,7 @@ clinics in Nsukka and Awka. All five portfolios use this one organisation.
 | # | Activity | Folder | Technology |
 |---|---|---|---|
 | 1 | Database design and modelling | [portfolio-1-database-design](portfolio-1-database-design/) | PostgreSQL 16, Graphviz |
-| 2 | Query processing and optimisation | portfolio-2-query-optimisation | PostgreSQL `EXPLAIN (ANALYZE, BUFFERS)` |
+| 2 | Query processing and optimisation | [portfolio-2-query-optimisation](portfolio-2-query-optimisation/) | PostgreSQL `EXPLAIN (ANALYZE, BUFFERS)` |
 | 3 | Transactions and concurrency | portfolio-3-transactions-concurrency | PostgreSQL + Python (psycopg) |
 | 4 | NoSQL and advanced data models | portfolio-4-nosql | MongoDB 9, Redis |
 | 5 | Distributed and cloud databases | portfolio-5-distributed-cloud | PostgreSQL streaming replication, postgres_fdw sharding, MongoDB replica set |

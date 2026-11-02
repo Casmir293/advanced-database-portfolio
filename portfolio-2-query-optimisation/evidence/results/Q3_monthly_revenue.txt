@@ -1,0 +1,31 @@
+SET search_path=hms;
+SET
+Q3_monthly_revenue: first 15 rows (full count in benchmark_results.md)
+SELECT * FROM (
+-- Q3 (optimised): read the pre-aggregated materialized view mv_monthly_revenue
+-- (refreshed nightly with REFRESH MATERIALIZED VIEW CONCURRENTLY).
+SELECT b.branch_code, m.month, m.item_type, m.revenue
+FROM mv_monthly_revenue m JOIN branch b USING (branch_id)
+WHERE m.month >= TIMESTAMPTZ '2025-01-01 00:00+01'
+  AND m.month <  TIMESTAMPTZ '2026-01-01 00:00+01'
+ORDER BY 1, 2, 3
+) q LIMIT 15;
+ branch_code |         month          | item_type |   revenue   
+-------------+------------------------+-----------+-------------
+ AWK         | 2025-01-01 00:00:00+01 | BED       |  3635000.00
+ AWK         | 2025-01-01 00:00:00+01 | CONSULT   | 14691000.00
+ AWK         | 2025-01-01 00:00:00+01 | DRUG      |  7148680.00
+ AWK         | 2025-01-01 00:00:00+01 | LAB       |  3315500.00
+ AWK         | 2025-02-01 00:00:00+01 | BED       |  3395000.00
+ AWK         | 2025-02-01 00:00:00+01 | CONSULT   | 13197000.00
+ AWK         | 2025-02-01 00:00:00+01 | DRUG      |  6491685.00
+ AWK         | 2025-02-01 00:00:00+01 | LAB       |  3131500.00
+ AWK         | 2025-03-01 00:00:00+01 | BED       |  3710000.00
+ AWK         | 2025-03-01 00:00:00+01 | CONSULT   | 13555000.00
+ AWK         | 2025-03-01 00:00:00+01 | DRUG      |  6688170.00
+ AWK         | 2025-03-01 00:00:00+01 | LAB       |  3148500.00
+ AWK         | 2025-04-01 00:00:00+01 | BED       |  3455000.00
+ AWK         | 2025-04-01 00:00:00+01 | CONSULT   | 14501000.00
+ AWK         | 2025-04-01 00:00:00+01 | DRUG      |  6991300.00
+(15 rows)
+

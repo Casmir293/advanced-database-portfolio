@@ -1,0 +1,29 @@
+-- Q5_patient_search.after.sql
+-- Q5 (optimised): SQL unchanged; pg_trgm GIN indexes make leading-wildcard ILIKE indexable.
+SELECT hospital_no, first_name, last_name, date_of_birth, phone
+FROM patient
+WHERE last_name ILIKE '%chukw%' AND first_name ILIKE '%emek%'
+ORDER BY last_name, first_name;
+
+
+Sort  (cost=165.64..165.92 rows=112 width=44) (actual time=0.400..0.402 rows=113 loops=1)
+  Sort Key: last_name, first_name
+  Sort Method: quicksort  Memory: 33kB
+  Buffers: shared hit=121
+  ->  Bitmap Heap Scan on patient  (cost=45.90..161.83 rows=112 width=44) (actual time=0.317..0.380 rows=113 loops=1)
+        Recheck Cond: (((first_name)::text ~~* '%emek%'::text) AND ((last_name)::text ~~* '%chukw%'::text))
+        Heap Blocks: exact=104
+        Buffers: shared hit=121
+        ->  BitmapAnd  (cost=45.90..45.90 rows=112 width=0) (actual time=0.310..0.310 rows=0 loops=1)
+              Buffers: shared hit=17
+              ->  Bitmap Index Scan on ix_patient_first_name_trgm  (cost=0.00..16.11 rows=1828 width=0) (actual time=0.096..0.096 rows=1892 loops=1)
+                    Index Cond: ((first_name)::text ~~* '%emek%'::text)
+                    Buffers: shared hit=7
+              ->  Bitmap Index Scan on ix_patient_last_name_trgm  (cost=0.00..29.48 rows=3686 width=0) (actual time=0.190..0.190 rows=3678 loops=1)
+                    Index Cond: ((last_name)::text ~~* '%chukw%'::text)
+                    Buffers: shared hit=10
+Settings: search_path = 'hms, public', random_page_cost = '1.1'
+Planning:
+  Buffers: shared hit=12 read=2
+Planning Time: 0.060 ms
+Execution Time: 0.410 ms

@@ -1,0 +1,26 @@
+-- Q3_monthly_revenue.after.sql
+-- Q3 (optimised): read the pre-aggregated materialized view mv_monthly_revenue
+-- (refreshed nightly with REFRESH MATERIALIZED VIEW CONCURRENTLY).
+SELECT b.branch_code, m.month, m.item_type, m.revenue
+FROM mv_monthly_revenue m JOIN branch b USING (branch_id)
+WHERE m.month >= TIMESTAMPTZ '2025-01-01 00:00+01'
+  AND m.month <  TIMESTAMPTZ '2026-01-01 00:00+01'
+ORDER BY 1, 2, 3;
+
+
+Sort  (cost=20.70..21.06 rows=144 width=23) (actual time=0.082..0.084 rows=144 loops=1)
+  Sort Key: b.branch_code, m.month, m.item_type
+  Sort Method: quicksort  Memory: 32kB
+  Buffers: shared hit=8 read=4
+  ->  Nested Loop  (cost=0.28..15.54 rows=144 width=23) (actual time=0.005..0.022 rows=144 loops=1)
+        Buffers: shared hit=8 read=4
+        ->  Seq Scan on branch b  (cost=0.00..1.03 rows=3 width=6) (actual time=0.001..0.001 rows=3 loops=1)
+              Buffers: shared hit=1
+        ->  Index Scan using ux_mv_monthly_revenue on mv_monthly_revenue m  (cost=0.28..4.36 rows=48 width=21) (actual time=0.003..0.005 rows=48 loops=3)
+              Index Cond: ((branch_id = b.branch_id) AND (month >= '2025-01-01 00:00:00+01'::timestamp with time zone) AND (month < '2026-01-01 00:00:00+01'::timestamp with time zone))
+              Buffers: shared hit=7 read=4
+Settings: search_path = 'hms, public', random_page_cost = '1.1'
+Planning:
+  Buffers: shared hit=39 read=1
+Planning Time: 0.072 ms
+Execution Time: 0.089 ms

@@ -1,0 +1,34 @@
+SET search_path=hms;
+SET
+Q7_hypertension_recall: first 15 rows (full count in benchmark_results.md)
+SELECT * FROM (
+-- Q7 (optimised): NOT IN rewritten as NOT EXISTS so the planner can use an anti-join
+-- (NOT IN cannot be, because of its NULL semantics); index on diagnosis(icd10_code).
+SELECT p.hospital_no, p.first_name, p.last_name, p.phone
+FROM patient p
+WHERE EXISTS (SELECT 1 FROM encounter e JOIN diagnosis d USING (encounter_id)
+              WHERE e.patient_id = p.patient_id AND d.icd10_code = 'I10')
+  AND NOT EXISTS (SELECT 1 FROM encounter e
+                  WHERE e.patient_id = p.patient_id
+                    AND e.started_at >= TIMESTAMPTZ '2025-11-02 00:00+01')
+ORDER BY p.last_name, p.first_name
+) q LIMIT 15;
+ hospital_no |  first_name  | last_name |     phone      
+-------------+--------------+-----------+----------------
+ USH-0020051 | Abubakar     | Adeyemi   | +2348052535753
+ USH-0042254 | Abubakar     | Adeyemi   | +2348058310881
+ USH-0025100 | Chibuike     | Adeyemi   | +2348059024193
+ USH-0006275 | Chidera      | Adeyemi   | +2348040039529
+ USH-0017103 | Chioma       | Adeyemi   | +2348080525572
+ USH-0010098 | Chioma       | Adeyemi   | +2348068015325
+ USH-0008202 | Chukwuemeka  | Adeyemi   | +2348086145985
+ USH-0030187 | Collins      | Adeyemi   | +2348068747376
+ USH-0031992 | Ebuka        | Adeyemi   | +2348085266549
+ USH-0029220 | Emeka        | Adeyemi   | +2348023938816
+ USH-0005358 | Emmanuel     | Adeyemi   | +2348095820941
+ USH-0030681 | Joy          | Adeyemi   | +2348097402391
+ USH-0042085 | Kosisochukwu | Adeyemi   | +2348098661892
+ USH-0022115 | Samuel       | Adeyemi   | +2348040595694
+ USH-0000576 | Samuel       | Adeyemi   | +2348009848892
+(15 rows)
+

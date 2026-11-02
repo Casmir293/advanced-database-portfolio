@@ -1,0 +1,60 @@
+-- Q8_disease_surveillance.after.sql
+-- @set work_mem=64MB
+-- Q8 (optimised): same SQL; work_mem raised for this reporting session so the hash join and
+-- aggregate fit in memory (no temp-file batches). See README for the trade-off.
+WITH counts AS (
+    SELECT e.branch_id, date_trunc('quarter', e.started_at) AS quarter, d.icd10_code, count(*) AS cases
+    FROM encounter e JOIN diagnosis d USING (encounter_id)
+    WHERE d.is_primary AND e.started_at >= TIMESTAMPTZ '2025-01-01 00:00+01'
+    GROUP BY 1, 2, 3)
+SELECT branch_code, quarter, icd10_code, cases, rk
+FROM (SELECT b.branch_code, c.*, rank() OVER (PARTITION BY c.branch_id, c.quarter ORDER BY c.cases DESC) AS rk
+      FROM counts c JOIN branch b USING (branch_id)) ranked
+WHERE rk <= 5
+ORDER BY branch_code, quarter, rk;
+
+
+Sort  (cost=32519.37..32526.46 rows=2837 width=33) (actual time=84.931..84.934 rows=120 loops=1)
+  Sort Key: ranked.branch_code, ranked.quarter, ranked.rk
+  Sort Method: quicksort  Memory: 32kB
+  Buffers: shared hit=6753 read=7865
+  ->  Subquery Scan on ranked  (cost=32264.46..32356.66 rows=2837 width=33) (actual time=84.834..84.895 rows=120 loops=1)
+        Buffers: shared hit=6753 read=7865
+        ->  WindowAgg  (cost=32264.46..32328.29 rows=2837 width=35) (actual time=84.833..84.890 rows=120 loops=1)
+              Run Condition: (rank() OVER (?) <= 5)
+              Buffers: shared hit=6753 read=7865
+              ->  Sort  (cost=32264.46..32271.55 rows=2837 width=27) (actual time=84.831..84.846 rows=816 loops=1)
+                    Sort Key: e.branch_id, (date_trunc('quarter'::text, e.started_at)), (count(*)) DESC
+                    Sort Method: quicksort  Memory: 75kB
+                    Buffers: shared hit=6753 read=7865
+                    ->  Hash Join  (cost=29230.73..32101.76 rows=2837 width=27) (actual time=84.125..84.709 rows=816 loops=1)
+                          Hash Cond: (e.branch_id = b.branch_id)
+                          Buffers: shared hit=6753 read=7865
+                          ->  HashAggregate  (cost=29229.67..31593.72 rows=189124 width=23) (actual time=84.118..84.659 rows=816 loops=1)
+                                Group Key: e.branch_id, date_trunc('quarter'::text, e.started_at), d.icd10_code
+                                Batches: 1  Memory Usage: 6289kB
+                                Buffers: shared hit=6753 read=7864
+                                ->  Hash Join  (cost=19018.78..27338.43 rows=189124 width=15) (actual time=42.854..73.258 rows=188203 loops=1)
+                                      Hash Cond: (d.encounter_id = e.encounter_id)
+                                      Buffers: shared hit=6753 read=7864
+                                      ->  Seq Scan on diagnosis d  (cost=0.00..6907.72 rows=357756 width=13) (actual time=0.002..13.089 rows=357221 loops=1)
+                                            Filter: is_primary
+                                            Rows Removed by Filter: 91151
+                                            Buffers: shared hit=2223 read=201
+                                      ->  Hash  (cost=16658.26..16658.26 rows=188841 width=18) (actual time=29.767..29.767 rows=188203 loops=1)
+                                            Buckets: 262144  Batches: 1  Memory Usage: 12341kB
+                                            Buffers: shared hit=4530 read=7663
+                                            ->  Seq Scan on encounter e  (cost=0.00..16658.26 rows=188841 width=18) (actual time=0.004..20.762 rows=188203 loops=1)
+                                                  Filter: (started_at >= '2025-01-01 00:00:00+01'::timestamp with time zone)
+                                                  Rows Removed by Filter: 169018
+                                                  Buffers: shared hit=4530 read=7663
+                          ->  Hash  (cost=1.03..1.03 rows=3 width=6) (actual time=0.005..0.005 rows=3 loops=1)
+                                Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                                Buffers: shared read=1
+                                ->  Seq Scan on branch b  (cost=0.00..1.03 rows=3 width=6) (actual time=0.004..0.004 rows=3 loops=1)
+                                      Buffers: shared read=1
+Settings: search_path = 'hms, public', random_page_cost = '1.1', work_mem = '64MB'
+Planning:
+  Buffers: shared hit=17
+Planning Time: 0.107 ms
+Execution Time: 85.407 ms

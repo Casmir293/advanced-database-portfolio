@@ -1,0 +1,54 @@
+-- Q3_monthly_revenue.before.sql
+-- Q3 Monthly revenue by branch and revenue stream for 2025 (management dashboard).
+SELECT b.branch_code, date_trunc('month', i.issued_at) AS month, l.item_type,
+       SUM(l.qty * l.unit_price) AS revenue
+FROM invoice i
+JOIN invoice_line l USING (invoice_id)
+JOIN branch b       USING (branch_id)
+WHERE i.issued_at >= TIMESTAMPTZ '2025-01-01 00:00+01'
+  AND i.issued_at <  TIMESTAMPTZ '2026-01-01 00:00+01'
+GROUP BY 1, 2, 3
+ORDER BY 1, 2, 3;
+
+
+Finalize GroupAggregate  (cost=48682.62..98354.82 rows=367546 width=49) (actual time=177.487..201.936 rows=144 loops=1)
+  Group Key: b.branch_code, (date_trunc('month'::text, i.issued_at)), l.item_type
+  Buffers: shared hit=2682 read=17330, temp read=1872 written=1878
+  ->  Gather Merge  (cost=48682.62..89013.03 rows=306288 width=49) (actual time=177.366..201.829 rows=432 loops=1)
+        Workers Planned: 2
+        Workers Launched: 2
+        Buffers: shared hit=2682 read=17330, temp read=1872 written=1878
+        ->  Partial GroupAggregate  (cost=47682.59..52659.77 rows=153144 width=49) (actual time=153.535..176.779 rows=144 loops=3)
+              Group Key: b.branch_code, (date_trunc('month'::text, i.issued_at)), l.item_type
+              Buffers: shared hit=2682 read=17330, temp read=1872 written=1878
+              ->  Sort  (cost=47682.59..48065.45 rows=153144 width=26) (actual time=153.518..164.620 rows=121139 loops=3)
+                    Sort Key: b.branch_code, (date_trunc('month'::text, i.issued_at)), l.item_type
+                    Sort Method: external merge  Disk: 5000kB
+                    Buffers: shared hit=2682 read=17330, temp read=1872 written=1878
+                    Worker 0:  Sort Method: external merge  Disk: 4952kB
+                    Worker 1:  Sort Method: external merge  Disk: 5024kB
+                    ->  Hash Join  (cost=9434.34..30828.93 rows=153144 width=26) (actual time=31.865..110.697 rows=121139 loops=3)
+                          Hash Cond: (i.branch_id = b.branch_id)
+                          Buffers: shared hit=2572 read=17330
+                          ->  Parallel Hash Join  (cost=9433.27..29475.09 rows=153144 width=24) (actual time=31.836..96.360 rows=121139 loops=3)
+                                Hash Cond: (l.invoice_id = i.invoice_id)
+                                Buffers: shared hit=2539 read=17330
+                                ->  Parallel Seq Scan on invoice_line l  (cost=0.00..18610.72 rows=545172 width=22) (actual time=0.019..49.843 rows=436138 loops=3)
+                                      Buffers: shared hit=1082 read=12077
+                                ->  Parallel Hash  (cost=8910.63..8910.63 rows=41811 width=18) (actual time=19.381..19.381 rows=33005 loops=3)
+                                      Buckets: 131072  Batches: 1  Memory Usage: 6496kB
+                                      Buffers: shared hit=1425 read=5253
+                                      ->  Parallel Seq Scan on invoice i  (cost=0.00..8910.63 rows=41811 width=18) (actual time=1.675..17.321 rows=33005 loops=3)
+                                            Filter: ((issued_at >= '2025-01-01 00:00:00+01'::timestamp with time zone) AND (issued_at < '2026-01-01 00:00:00+01'::timestamp with time zone))
+                                            Rows Removed by Filter: 86068
+                                            Buffers: shared hit=1425 read=5253
+                          ->  Hash  (cost=1.03..1.03 rows=3 width=6) (actual time=0.016..0.016 rows=3 loops=3)
+                                Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                                Buffers: shared hit=3
+                                ->  Seq Scan on branch b  (cost=0.00..1.03 rows=3 width=6) (actual time=0.014..0.014 rows=3 loops=3)
+                                      Buffers: shared hit=3
+Settings: search_path = 'hms, public'
+Planning:
+  Buffers: shared hit=62 read=11
+Planning Time: 1.021 ms
+Execution Time: 202.961 ms

@@ -1,0 +1,36 @@
+SET search_path=hms;
+SET
+Q8_disease_surveillance: first 15 rows (full count in benchmark_results.md)
+SELECT * FROM (
+-- Q8 (optimised): same SQL; work_mem raised for this reporting session so the hash join and
+-- aggregate fit in memory (no temp-file batches). See README for the trade-off.
+WITH counts AS (
+    SELECT e.branch_id, date_trunc('quarter', e.started_at) AS quarter, d.icd10_code, count(*) AS cases
+    FROM encounter e JOIN diagnosis d USING (encounter_id)
+    WHERE d.is_primary AND e.started_at >= TIMESTAMPTZ '2025-01-01 00:00+01'
+    GROUP BY 1, 2, 3)
+SELECT branch_code, quarter, icd10_code, cases, rk
+FROM (SELECT b.branch_code, c.*, rank() OVER (PARTITION BY c.branch_id, c.quarter ORDER BY c.cases DESC) AS rk
+      FROM counts c JOIN branch b USING (branch_id)) ranked
+WHERE rk <= 5
+ORDER BY branch_code, quarter, rk
+) q LIMIT 15;
+ branch_code |        quarter         | icd10_code | cases | rk 
+-------------+------------------------+------------+-------+----
+ AWK         | 2025-01-01 00:00:00+01 | Z34.9      |   683 |  1
+ AWK         | 2025-01-01 00:00:00+01 | B54        |   541 |  2
+ AWK         | 2025-01-01 00:00:00+01 | B50.9      |   409 |  3
+ AWK         | 2025-01-01 00:00:00+01 | D64.9      |   263 |  4
+ AWK         | 2025-01-01 00:00:00+01 | N39.0      |   257 |  5
+ AWK         | 2025-04-01 00:00:00+01 | Z34.9      |   694 |  1
+ AWK         | 2025-04-01 00:00:00+01 | B54        |   469 |  2
+ AWK         | 2025-04-01 00:00:00+01 | B50.9      |   441 |  3
+ AWK         | 2025-04-01 00:00:00+01 | N39.0      |   280 |  4
+ AWK         | 2025-04-01 00:00:00+01 | D64.9      |   258 |  5
+ AWK         | 2025-07-01 00:00:00+01 | Z34.9      |   806 |  1
+ AWK         | 2025-07-01 00:00:00+01 | B54        |   582 |  2
+ AWK         | 2025-07-01 00:00:00+01 | B50.9      |   427 |  3
+ AWK         | 2025-07-01 00:00:00+01 | N39.0      |   282 |  4
+ AWK         | 2025-07-01 00:00:00+01 | D64.9      |   274 |  5
+(15 rows)
+

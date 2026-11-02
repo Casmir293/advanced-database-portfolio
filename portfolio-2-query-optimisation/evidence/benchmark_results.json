@@ -1,0 +1,348 @@
+{
+ "Q1": {
+  "before": {
+   "median_ms": 385.53333300000014,
+   "rows": 40,
+   "shared_hit": 168834,
+   "shared_read": 10591,
+   "temp_written": 0,
+   "planning_ms": 0.549,
+   "nodes": [
+    "Gather Merge",
+    "Sort",
+    "Nested Loop",
+    "Nested Loop",
+    "Hash Join",
+    "Seq Scan on encounter",
+    "Hash",
+    "Index Scan on patient using patient_hospital_no_key",
+    "Index Scan on branch using branch_pkey",
+    "Index Scan on staff using staff_pkey",
+    "Aggregate",
+    "Index Scan on diagnosis using diagnosis_pkey",
+    "Aggregate",
+    "Nested Loop",
+    "Seq Scan on drug",
+    "Materialize",
+    "Nested Loop",
+    "Seq Scan on prescription",
+    "Index Scan on prescription_item using prescription_item_pkey",
+    "Aggregate",
+    "Nested Loop",
+    "Seq Scan on lab_order",
+    "Bitmap Heap Scan on lab_result",
+    "Bitmap Index Scan using lab_result_pkey"
+   ]
+  },
+  "after": {
+   "median_ms": 0.5513330000006533,
+   "rows": 40,
+   "shared_hit": 917,
+   "shared_read": 0,
+   "temp_written": 0,
+   "planning_ms": 0.201,
+   "nodes": [
+    "Sort",
+    "Nested Loop",
+    "Nested Loop",
+    "Nested Loop",
+    "Index Scan on patient using patient_hospital_no_key",
+    "Index Scan on encounter using ix_encounter_patient_started",
+    "Memoize",
+    "Index Scan on branch using branch_pkey",
+    "Index Scan on staff using staff_pkey",
+    "Aggregate",
+    "Index Scan on diagnosis using diagnosis_pkey",
+    "Aggregate",
+    "Nested Loop",
+    "Nested Loop",
+    "Index Scan on prescription using ix_prescription_encounter",
+    "Index Scan on prescription_item using prescription_item_pkey",
+    "Index Scan on drug using drug_pkey",
+    "Aggregate",
+    "Nested Loop",
+    "Index Scan on lab_order using ix_lab_order_encounter",
+    "Index Scan on lab_result using lab_result_pkey"
+   ]
+  }
+ },
+ "Q2": {
+  "before": {
+   "median_ms": 7.21412499999996,
+   "rows": 14,
+   "shared_hit": 158,
+   "shared_read": 5219,
+   "temp_written": 0,
+   "planning_ms": 0.062,
+   "nodes": [
+    "Gather Merge",
+    "Sort",
+    "Nested Loop",
+    "Seq Scan on appointment",
+    "Index Scan on patient using patient_pkey"
+   ]
+  },
+  "after": {
+   "median_ms": 0.15866600000080666,
+   "rows": 14,
+   "shared_hit": 50,
+   "shared_read": 0,
+   "temp_written": 0,
+   "planning_ms": 0.029,
+   "nodes": [
+    "Nested Loop",
+    "Index Scan on appointment using ix_appointment_doctor_time",
+    "Index Scan on patient using patient_pkey"
+   ]
+  }
+ },
+ "Q3": {
+  "before": {
+   "median_ms": 128.83204199999997,
+   "rows": 144,
+   "shared_hit": 2874,
+   "shared_read": 17138,
+   "temp_written": 1877,
+   "planning_ms": 0.129,
+   "nodes": [
+    "Aggregate",
+    "Gather Merge",
+    "Aggregate",
+    "Sort",
+    "Hash Join",
+    "Hash Join",
+    "Seq Scan on invoice_line",
+    "Hash",
+    "Seq Scan on invoice",
+    "Hash",
+    "Seq Scan on branch"
+   ]
+  },
+  "after": {
+   "median_ms": 0.38766700000003596,
+   "rows": 144,
+   "shared_hit": 12,
+   "shared_read": 0,
+   "temp_written": 0,
+   "planning_ms": 0.02,
+   "nodes": [
+    "Sort",
+    "Nested Loop",
+    "Seq Scan on branch",
+    "Index Scan on mv_monthly_revenue using ux_mv_monthly_revenue"
+   ]
+  }
+ },
+ "Q4": {
+  "before": {
+   "median_ms": 10.440125000000577,
+   "rows": 496,
+   "shared_hit": 9836,
+   "shared_read": 4523,
+   "temp_written": 0,
+   "planning_ms": 0.188,
+   "nodes": [
+    "Gather Merge",
+    "Sort",
+    "Hash Join",
+    "Nested Loop",
+    "Nested Loop",
+    "Nested Loop",
+    "Seq Scan on lab_result",
+    "Index Scan on lab_order using lab_order_pkey",
+    "Index Scan on encounter using encounter_pkey",
+    "Index Scan on patient using patient_pkey",
+    "Hash",
+    "Seq Scan on lab_test"
+   ]
+  },
+  "after": {
+   "median_ms": 2.911624999999418,
+   "rows": 496,
+   "shared_hit": 10277,
+   "shared_read": 0,
+   "temp_written": 0,
+   "planning_ms": 0.185,
+   "nodes": [
+    "Sort",
+    "Nested Loop",
+    "Nested Loop",
+    "Nested Loop",
+    "Nested Loop",
+    "Bitmap Heap Scan on lab_result",
+    "Bitmap Index Scan using ix_lab_result_abnormal_recent",
+    "Index Scan on lab_order using lab_order_pkey",
+    "Index Scan on encounter using encounter_pkey",
+    "Index Scan on patient using patient_pkey",
+    "Memoize",
+    "Index Scan on lab_test using lab_test_pkey"
+   ]
+  }
+ },
+ "Q5": {
+  "before": {
+   "median_ms": 10.035209000000656,
+   "rows": 113,
+   "shared_hit": 1029,
+   "shared_read": 0,
+   "temp_written": 0,
+   "planning_ms": 0.047,
+   "nodes": [
+    "Sort",
+    "Seq Scan on patient"
+   ]
+  },
+  "after": {
+   "median_ms": 0.5384580000011852,
+   "rows": 113,
+   "shared_hit": 121,
+   "shared_read": 0,
+   "temp_written": 0,
+   "planning_ms": 0.025,
+   "nodes": [
+    "Sort",
+    "Bitmap Heap Scan on patient",
+    "BitmapAnd",
+    "Bitmap Index Scan using ix_patient_first_name_trgm",
+    "Bitmap Index Scan using ix_patient_last_name_trgm"
+   ]
+  }
+ },
+ "Q6": {
+  "before": {
+   "median_ms": 342.110958000001,
+   "rows": 50,
+   "shared_hit": 2741,
+   "shared_read": 27939,
+   "temp_written": 2122,
+   "planning_ms": 0.131,
+   "nodes": [
+    "Limit",
+    "Sort",
+    "Hash Join",
+    "Hash Join",
+    "Aggregate",
+    "Index Scan on invoice_line using invoice_line_pkey",
+    "Hash",
+    "Hash Join",
+    "Aggregate",
+    "Seq Scan on payment",
+    "Hash",
+    "Seq Scan on invoice",
+    "Hash",
+    "Seq Scan on patient"
+   ]
+  },
+  "after": {
+   "median_ms": 28.622834000000097,
+   "rows": 50,
+   "shared_hit": 56323,
+   "shared_read": 10805,
+   "temp_written": 0,
+   "planning_ms": 0.116,
+   "nodes": [
+    "Limit",
+    "Sort",
+    "Nested Loop",
+    "Nested Loop",
+    "Hash Join",
+    "Index Scan on invoice using ix_invoice_unpaid_branch",
+    "Hash",
+    "Seq Scan on patient",
+    "Aggregate",
+    "Index Scan on invoice_line using invoice_line_pkey",
+    "Aggregate",
+    "Index Scan on payment using ix_payment_invoice"
+   ]
+  }
+ },
+ "Q7": {
+  "before": {
+   "median_ms": 55.999917000001176,
+   "rows": 714,
+   "shared_hit": 9203,
+   "shared_read": 30872,
+   "temp_written": 0,
+   "planning_ms": 0.123,
+   "nodes": [
+    "Gather Merge",
+    "Sort",
+    "Hash Join",
+    "Seq Scan on patient",
+    "Seq Scan on encounter",
+    "Hash",
+    "Hash Join",
+    "Seq Scan on encounter",
+    "Hash",
+    "Seq Scan on diagnosis"
+   ]
+  },
+  "after": {
+   "median_ms": 10.900040999999305,
+   "rows": 714,
+   "shared_hit": 46781,
+   "shared_read": 3956,
+   "temp_written": 0,
+   "planning_ms": 0.184,
+   "nodes": [
+    "Gather Merge",
+    "Sort",
+    "Nested Loop",
+    "Hash Join",
+    "Seq Scan on patient",
+    "Hash",
+    "Nested Loop",
+    "Bitmap Heap Scan on diagnosis",
+    "Bitmap Index Scan using ix_diagnosis_code",
+    "Index Scan on encounter using encounter_pkey",
+    "Index Only Scan on encounter using ix_encounter_patient_started"
+   ]
+  }
+ },
+ "Q8": {
+  "before": {
+   "median_ms": 87.65491700000005,
+   "rows": 120,
+   "shared_hit": 3750,
+   "shared_read": 10868,
+   "temp_written": 1288,
+   "planning_ms": 0.126,
+   "nodes": [
+    "Sort",
+    "Subquery Scan",
+    "WindowAgg",
+    "Sort",
+    "Hash Join",
+    "Aggregate",
+    "Hash Join",
+    "Seq Scan on diagnosis",
+    "Hash",
+    "Seq Scan on encounter",
+    "Hash",
+    "Seq Scan on branch"
+   ]
+  },
+  "after": {
+   "median_ms": 68.20220800000243,
+   "rows": 120,
+   "shared_hit": 6987,
+   "shared_read": 7631,
+   "temp_written": 0,
+   "planning_ms": 0.117,
+   "nodes": [
+    "Sort",
+    "Subquery Scan",
+    "WindowAgg",
+    "Sort",
+    "Hash Join",
+    "Aggregate",
+    "Hash Join",
+    "Seq Scan on diagnosis",
+    "Hash",
+    "Seq Scan on encounter",
+    "Hash",
+    "Seq Scan on branch"
+   ]
+  }
+ }
+}

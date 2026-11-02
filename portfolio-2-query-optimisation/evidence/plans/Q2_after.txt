@@ -1,0 +1,25 @@
+-- Q2_doctor_schedule.after.sql
+-- Q2 (optimised): sargable half-open range instead of a cast on the column,
+-- served by a composite B-tree index on appointment(doctor_id, scheduled_at).
+SELECT a.scheduled_at::time AS slot, p.hospital_no,
+       p.first_name || ' ' || p.last_name AS patient, a.status, a.reason
+FROM appointment a JOIN patient p USING (patient_id)
+WHERE a.doctor_id = 78
+  AND a.scheduled_at >= TIMESTAMPTZ '2026-11-03 00:00+01'
+  AND a.scheduled_at <  TIMESTAMPTZ '2026-11-04 00:00+01'
+ORDER BY a.scheduled_at;
+
+
+Nested Loop  (cost=0.71..19.70 rows=5 width=84) (actual time=0.009..2.307 rows=14 loops=1)
+  Buffers: shared hit=29 read=21
+  ->  Index Scan using ix_appointment_doctor_time on appointment a  (cost=0.42..7.13 rows=5 width=36) (actual time=0.006..0.016 rows=14 loops=1)
+        Index Cond: ((doctor_id = 78) AND (scheduled_at >= '2026-11-03 00:00:00+01'::timestamp with time zone) AND (scheduled_at < '2026-11-04 00:00:00+01'::timestamp with time zone))
+        Buffers: shared read=8
+  ->  Index Scan using patient_pkey on patient p  (cost=0.29..2.51 rows=1 width=29) (actual time=0.163..0.163 rows=1 loops=14)
+        Index Cond: (patient_id = a.patient_id)
+        Buffers: shared hit=29 read=13
+Settings: search_path = 'hms, public', random_page_cost = '1.1'
+Planning:
+  Buffers: shared hit=57 read=1
+Planning Time: 0.130 ms
+Execution Time: 2.312 ms

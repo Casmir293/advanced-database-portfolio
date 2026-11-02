@@ -1,0 +1,35 @@
+-- Q2_doctor_schedule.before.sql
+-- Q2 Doctor's clinic list for one day (front desk, printed every morning).
+-- Written the "natural" way: cast the timestamp to a date.
+SELECT a.scheduled_at::time AS slot, p.hospital_no,
+       p.first_name || ' ' || p.last_name AS patient, a.status, a.reason
+FROM appointment a JOIN patient p USING (patient_id)
+WHERE a.doctor_id = 78
+  AND a.scheduled_at::date = DATE '2026-11-03'
+ORDER BY a.scheduled_at;
+
+
+Gather Merge  (cost=9432.99..9435.79 rows=24 width=84) (actual time=7.897..8.401 rows=14 loops=1)
+  Workers Planned: 2
+  Workers Launched: 2
+  Buffers: shared hit=49 read=5328
+  ->  Sort  (cost=8432.97..8433.00 rows=12 width=84) (actual time=6.792..6.793 rows=5 loops=3)
+        Sort Key: a.scheduled_at
+        Sort Method: quicksort  Memory: 25kB
+        Buffers: shared hit=49 read=5328
+        Worker 0:  Sort Method: quicksort  Memory: 25kB
+        Worker 1:  Sort Method: quicksort  Memory: 25kB
+        ->  Nested Loop  (cost=0.29..8432.75 rows=12 width=84) (actual time=6.197..6.780 rows=5 loops=3)
+              Buffers: shared hit=31 read=5328
+              ->  Parallel Seq Scan on appointment a  (cost=0.00..8336.17 rows=12 width=36) (actual time=5.884..6.040 rows=5 loops=3)
+                    Filter: ((doctor_id = 78) AND ((scheduled_at)::date = '2026-11-03'::date))
+                    Rows Removed by Filter: 138106
+                    Buffers: shared read=5315
+              ->  Index Scan using patient_pkey on patient p  (cost=0.29..8.04 rows=1 width=29) (actual time=0.157..0.157 rows=1 loops=14)
+                    Index Cond: (patient_id = a.patient_id)
+                    Buffers: shared hit=31 read=13
+Settings: search_path = 'hms, public'
+Planning:
+  Buffers: shared hit=50
+Planning Time: 0.176 ms
+Execution Time: 8.412 ms

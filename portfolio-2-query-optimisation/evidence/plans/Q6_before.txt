@@ -1,0 +1,59 @@
+-- Q6_outstanding_balances.before.sql
+-- Q6 Debt follow-up: 50 largest unpaid balances at Nsukka older than 30 days.
+-- Uses the invoice_summary view, which aggregates ALL invoice lines and payments first.
+SELECT s.invoice_id, p.hospital_no, p.last_name, s.issued_at, s.total_amount, s.amount_paid, s.balance
+FROM invoice_summary s JOIN patient p USING (patient_id)
+WHERE s.balance > 0 AND s.branch_id = 2
+  AND s.issued_at < TIMESTAMPTZ '2026-10-03 00:00+01'
+ORDER BY s.balance DESC
+LIMIT 50;
+
+
+Limit  (cost=148399.64..148399.76 rows=50 width=130) (actual time=439.373..439.377 rows=50 loops=1)
+  Buffers: shared hit=4940 read=25740 written=345, temp read=1564 written=2122
+  ->  Sort  (cost=148399.64..148455.25 rows=22246 width=130) (actual time=439.373..439.375 rows=50 loops=1)
+        Sort Key: ((COALESCE((sum(((invoice_line.qty)::numeric * invoice_line.unit_price))), '0'::numeric) - COALESCE((sum(payment.amount)), '0'::numeric))) DESC
+        Sort Method: top-N heapsort  Memory: 36kB
+        Buffers: shared hit=4940 read=25740 written=345, temp read=1564 written=2122
+        ->  Hash Join  (cost=55783.90..147660.64 rows=22246 width=130) (actual time=169.033..438.347 rows=7850 loops=1)
+              Hash Cond: (i.patient_id = p.patient_id)
+              Buffers: shared hit=4940 read=25740 written=345, temp read=1564 written=2122
+              ->  Hash Right Join  (cost=53404.90..145167.63 rows=22246 width=84) (actual time=163.759..430.709 rows=7850 loops=1)
+                    Hash Cond: (invoice_line.invoice_id = i.invoice_id)
+                    Filter: ((COALESCE((sum(((invoice_line.qty)::numeric * invoice_line.unit_price))), '0'::numeric) - COALESCE((sum(payment.amount)), '0'::numeric)) > '0'::numeric)
+                    Rows Removed by Filter: 57649
+                    Buffers: shared hit=3911 read=25740 written=345, temp read=1564 written=2122
+                    ->  GroupAggregate  (cost=0.43..86940.97 rows=291329 width=40) (actual time=0.013..238.514 rows=357221 loops=1)
+                          Group Key: invoice_line.invoice_id
+                          Buffers: shared hit=1499 read=18175 written=17
+                          ->  Index Scan using invoice_line_pkey on invoice_line  (cost=0.43..70215.22 rows=1308413 width=17) (actual time=0.010..77.293 rows=1308413 loops=1)
+                                Buffers: shared hit=1499 read=18175 written=17
+                    ->  Hash  (cost=52570.25..52570.25 rows=66738 width=52) (actual time=163.711..163.712 rows=65499 loops=1)
+                          Buckets: 131072  Batches: 1  Memory Usage: 4747kB
+                          Buffers: shared hit=2412 read=7565 written=328, temp read=1564 written=2122
+                          ->  Hash Right Join  (cost=40913.45..52570.25 rows=66738 width=52) (actual time=70.609..159.705 rows=65499 loops=1)
+                                Hash Cond: (payment.invoice_id = i.invoice_id)
+                                Buffers: shared hit=2412 read=7565 written=328, temp read=1564 written=2122
+                                ->  HashAggregate  (cost=28042.91..35481.74 rows=334095 width=40) (actual time=53.000..124.854 rows=334095 loops=1)
+                                      Group Key: payment.invoice_id
+                                      Planned Partitions: 16  Batches: 65  Memory Usage: 8337kB  Disk Usage: 15080kB
+                                      Buffers: shared hit=27 read=3272 written=328, temp read=1564 written=2122
+                                      ->  Seq Scan on payment  (cost=0.00..6639.95 rows=334095 width=14) (actual time=0.180..18.795 rows=334095 loops=1)
+                                            Buffers: shared hit=27 read=3272 written=328
+                                ->  Hash  (cost=12036.31..12036.31 rows=66738 width=20) (actual time=17.509..17.510 rows=65499 loops=1)
+                                      Buckets: 131072  Batches: 1  Memory Usage: 4351kB
+                                      Buffers: shared hit=2385 read=4293
+                                      ->  Seq Scan on invoice i  (cost=0.00..12036.31 rows=66738 width=20) (actual time=2.461..13.868 rows=65499 loops=1)
+                                            Filter: ((issued_at < '2026-10-03 00:00:00+01'::timestamp with time zone) AND (branch_id = 2))
+                                            Rows Removed by Filter: 291722
+                                            Buffers: shared hit=2385 read=4293
+              ->  Hash  (cost=1629.00..1629.00 rows=60000 width=22) (actual time=5.267..5.267 rows=60000 loops=1)
+                    Buckets: 65536  Batches: 1  Memory Usage: 3790kB
+                    Buffers: shared hit=1029
+                    ->  Seq Scan on patient p  (cost=0.00..1629.00 rows=60000 width=22) (actual time=0.001..2.240 rows=60000 loops=1)
+                          Buffers: shared hit=1029
+Settings: search_path = 'hms, public'
+Planning:
+  Buffers: shared hit=39 read=2
+Planning Time: 1.743 ms
+Execution Time: 440.541 ms

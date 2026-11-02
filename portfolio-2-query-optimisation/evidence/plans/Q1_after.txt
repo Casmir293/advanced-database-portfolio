@@ -1,0 +1,86 @@
+-- Q1_patient_history.after.sql
+-- Q1 (optimised): SQL unchanged. Indexes on encounter(patient_id, started_at DESC),
+-- prescription(encounter_id) and lab_order(encounter_id) turn every lookup into an index scan.
+SELECT e.encounter_id, e.started_at, e.encounter_type, b.branch_code,
+       s.first_name || ' ' || s.last_name AS doctor,
+       (SELECT string_agg(d.icd10_code || CASE WHEN d.is_primary THEN '*' ELSE '' END, ', ')
+          FROM diagnosis d WHERE d.encounter_id = e.encounter_id)              AS diagnoses,
+       (SELECT string_agg(dr.generic_name, ', ')
+          FROM prescription rx JOIN prescription_item pi USING (rx_id) JOIN drug dr USING (drug_id)
+         WHERE rx.encounter_id = e.encounter_id)                               AS drugs,
+       (SELECT string_agg(r.test_code || '=' || COALESCE(r.value_num::text, r.value_text), '; ')
+          FROM lab_order o JOIN lab_result r USING (order_id)
+         WHERE o.encounter_id = e.encounter_id)                                AS labs
+FROM patient p
+JOIN encounter e ON e.patient_id = p.patient_id
+JOIN branch b    ON b.branch_id = e.branch_id
+JOIN staff s     ON s.staff_id = e.doctor_id
+WHERE p.hospital_no = 'USH-0000002'
+ORDER BY e.started_at DESC;
+
+
+Sort  (cost=112.96..112.97 rows=6 width=152) (actual time=13.454..13.455 rows=40 loops=1)
+  Sort Key: e.started_at DESC
+  Sort Method: quicksort  Memory: 29kB
+  Buffers: shared hit=620 read=297
+  ->  Nested Loop  (cost=1.00..112.88 rows=6 width=152) (actual time=0.780..13.445 rows=40 loops=1)
+        Buffers: shared hit=620 read=297
+        ->  Nested Loop  (cost=0.85..13.68 rows=6 width=28) (actual time=0.317..0.372 rows=40 loops=1)
+              Buffers: shared hit=14 read=34
+              ->  Nested Loop  (cost=0.71..13.04 rows=6 width=26) (actual time=0.315..0.361 rows=40 loops=1)
+                    Buffers: shared hit=12 read=34
+                    ->  Index Scan using patient_hospital_no_key on patient p  (cost=0.29..2.51 rows=1 width=4) (actual time=0.310..0.310 rows=1 loops=1)
+                          Index Cond: ((hospital_no)::text = 'USH-0000002'::text)
+                          Buffers: shared hit=1 read=2
+                    ->  Index Scan using ix_encounter_patient_started on encounter e  (cost=0.42..10.46 rows=8 width=30) (actual time=0.004..0.047 rows=40 loops=1)
+                          Index Cond: (patient_id = p.patient_id)
+                          Buffers: shared hit=11 read=32
+              ->  Memoize  (cost=0.14..0.16 rows=1 width=6) (actual time=0.000..0.000 rows=1 loops=40)
+                    Cache Key: e.branch_id
+                    Cache Mode: logical
+                    Hits: 39  Misses: 1  Evictions: 0  Overflows: 0  Memory Usage: 1kB
+                    Buffers: shared hit=2
+                    ->  Index Scan using branch_pkey on branch b  (cost=0.13..0.15 rows=1 width=6) (actual time=0.001..0.001 rows=1 loops=1)
+                          Index Cond: (branch_id = e.branch_id)
+                          Buffers: shared hit=2
+        ->  Index Scan using staff_pkey on staff s  (cost=0.15..0.17 rows=1 width=17) (actual time=0.003..0.003 rows=1 loops=40)
+              Index Cond: (staff_id = e.doctor_id)
+              Buffers: shared hit=78 read=2
+        SubPlan 1
+          ->  Aggregate  (cost=2.65..2.66 rows=1 width=32) (actual time=0.139..0.139 rows=1 loops=40)
+                Buffers: shared hit=124 read=48
+                ->  Index Scan using diagnosis_pkey on diagnosis d  (cost=0.42..2.64 rows=1 width=6) (actual time=0.138..0.138 rows=1 loops=40)
+                      Index Cond: (encounter_id = e.encounter_id)
+                      Buffers: shared hit=124 read=48
+        SubPlan 2
+          ->  Aggregate  (cost=6.12..6.13 rows=1 width=32) (actual time=0.123..0.123 rows=1 loops=40)
+                Buffers: shared hit=287 read=123
+                ->  Nested Loop  (cost=0.98..6.11 rows=2 width=13) (actual time=0.122..0.122 rows=1 loops=40)
+                      Buffers: shared hit=287 read=123
+                      ->  Nested Loop  (cost=0.85..5.80 rows=2 width=4) (actual time=0.121..0.122 rows=1 loops=40)
+                            Buffers: shared hit=174 read=122
+                            ->  Index Scan using ix_prescription_encounter on prescription rx  (cost=0.42..2.64 rows=1 width=8) (actual time=0.003..0.003 rows=1 loops=40)
+                                  Index Cond: (encounter_id = e.encounter_id)
+                                  Buffers: shared hit=110 read=45
+                            ->  Index Scan using prescription_item_pkey on prescription_item pi  (cost=0.42..3.14 rows=2 width=12) (actual time=0.135..0.135 rows=2 loops=35)
+                                  Index Cond: (rx_id = rx.rx_id)
+                                  Buffers: shared hit=64 read=77
+                      ->  Index Scan using drug_pkey on drug dr  (cost=0.14..0.16 rows=1 width=17) (actual time=0.000..0.000 rows=1 loops=57)
+                            Index Cond: (drug_id = pi.drug_id)
+                            Buffers: shared hit=113 read=1
+        SubPlan 3
+          ->  Aggregate  (cost=7.57..7.58 rows=1 width=32) (actual time=0.061..0.061 rows=1 loops=40)
+                Buffers: shared hit=117 read=90
+                ->  Nested Loop  (cost=0.84..7.54 rows=2 width=32) (actual time=0.061..0.061 rows=1 loops=40)
+                      Buffers: shared hit=117 read=90
+                      ->  Index Scan using ix_lab_order_encounter on lab_order o  (cost=0.42..2.64 rows=1 width=8) (actual time=0.002..0.002 rows=0 loops=40)
+                            Index Cond: (encounter_id = e.encounter_id)
+                            Buffers: shared hit=92 read=43
+                      ->  Index Scan using lab_result_pkey on lab_result r  (cost=0.42..4.87 rows=3 width=40) (actual time=0.156..0.157 rows=3 loops=15)
+                            Index Cond: (order_id = o.order_id)
+                            Buffers: shared hit=25 read=47
+Settings: search_path = 'hms, public', random_page_cost = '1.1'
+Planning:
+  Buffers: shared hit=279 read=33
+Planning Time: 4.171 ms
+Execution Time: 13.482 ms

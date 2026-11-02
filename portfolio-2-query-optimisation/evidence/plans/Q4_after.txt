@@ -1,0 +1,59 @@
+-- Q4_abnormal_labs.after.sql
+-- Q4 (optimised): SQL unchanged; served by partial index lab_result(resulted_at) WHERE abnormal_flag <> 'N'.
+SELECT r.resulted_at, p.hospital_no, p.last_name, t.name AS test,
+       COALESCE(r.value_num::text, r.value_text) AS result, t.unit, r.abnormal_flag, o.priority
+FROM lab_result r
+JOIN lab_order o  USING (order_id)
+JOIN encounter e  USING (encounter_id)
+JOIN patient p    ON p.patient_id = e.patient_id
+JOIN lab_test t   USING (test_code)
+WHERE r.abnormal_flag <> 'N'
+  AND r.resulted_at >= TIMESTAMPTZ '2026-10-26 00:00+01'
+  AND r.resulted_at <  TIMESTAMPTZ '2026-11-02 00:00+01'
+  AND e.branch_id = 1
+ORDER BY CASE o.priority WHEN 'STAT' THEN 1 WHEN 'URGENT' THEN 2 ELSE 3 END, r.resulted_at DESC;
+
+
+Sort  (cost=3208.79..3210.23 rows=575 width=93) (actual time=5.515..5.521 rows=496 loops=1)
+  Sort Key: (CASE o.priority WHEN 'STAT'::text THEN 1 WHEN 'URGENT'::text THEN 2 ELSE 3 END), r.resulted_at DESC
+  Sort Method: quicksort  Memory: 75kB
+  Buffers: shared hit=9417 read=860
+  ->  Nested Loop  (cost=14.09..3182.44 rows=575 width=93) (actual time=0.234..5.407 rows=496 loops=1)
+        Buffers: shared hit=9417 read=860
+        ->  Nested Loop  (cost=13.94..3160.34 rows=575 width=67) (actual time=0.231..5.297 rows=496 loops=1)
+              Buffers: shared hit=9387 read=860
+              ->  Nested Loop  (cost=13.65..2980.26 rows=575 width=53) (actual time=0.229..2.280 rows=496 loops=1)
+                    Buffers: shared hit=7975 read=784
+                    ->  Nested Loop  (cost=13.23..2500.12 rows=887 width=57) (actual time=0.224..1.636 rows=1006 loops=1)
+                          Buffers: shared hit=4033 read=702
+                          ->  Bitmap Heap Scan on lab_result r  (cost=12.81..886.66 rows=887 width=50) (actual time=0.081..0.856 rows=1006 loops=1)
+                                Recheck Cond: ((resulted_at >= '2026-10-26 00:00:00+01'::timestamp with time zone) AND (resulted_at < '2026-11-02 00:00:00+01'::timestamp with time zone) AND (abnormal_flag <> 'N'::bpchar))
+                                Heap Blocks: exact=706
+                                Buffers: shared hit=13 read=698
+                                ->  Bitmap Index Scan on ix_lab_result_abnormal_recent  (cost=0.00..12.59 rows=887 width=0) (actual time=0.048..0.048 rows=1006 loops=1)
+                                      Index Cond: ((resulted_at >= '2026-10-26 00:00:00+01'::timestamp with time zone) AND (resulted_at < '2026-11-02 00:00:00+01'::timestamp with time zone))
+                                      Buffers: shared read=5
+                          ->  Index Scan using lab_order_pkey on lab_order o  (cost=0.42..1.82 rows=1 width=23) (actual time=0.001..0.001 rows=1 loops=1006)
+                                Index Cond: (order_id = r.order_id)
+                                Buffers: shared hit=4020 read=4
+                    ->  Index Scan using encounter_pkey on encounter e  (cost=0.42..0.54 rows=1 width=12) (actual time=0.001..0.001 rows=0 loops=1006)
+                          Index Cond: (encounter_id = o.encounter_id)
+                          Filter: (branch_id = 1)
+                          Rows Removed by Filter: 1
+                          Buffers: shared hit=3942 read=82
+              ->  Index Scan using patient_pkey on patient p  (cost=0.29..0.31 rows=1 width=22) (actual time=0.006..0.006 rows=1 loops=496)
+                    Index Cond: (patient_id = e.patient_id)
+                    Buffers: shared hit=1412 read=76
+        ->  Memoize  (cost=0.15..0.17 rows=1 width=26) (actual time=0.000..0.000 rows=1 loops=496)
+              Cache Key: r.test_code
+              Cache Mode: logical
+              Hits: 481  Misses: 15  Evictions: 0  Overflows: 0  Memory Usage: 2kB
+              Buffers: shared hit=30
+              ->  Index Scan using lab_test_pkey on lab_test t  (cost=0.14..0.16 rows=1 width=26) (actual time=0.001..0.001 rows=1 loops=15)
+                    Index Cond: ((test_code)::text = (r.test_code)::text)
+                    Buffers: shared hit=30
+Settings: search_path = 'hms, public', random_page_cost = '1.1'
+Planning:
+  Buffers: shared hit=71 read=2
+Planning Time: 1.714 ms
+Execution Time: 5.551 ms

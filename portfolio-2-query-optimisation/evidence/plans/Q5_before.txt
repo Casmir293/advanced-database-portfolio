@@ -1,0 +1,21 @@
+-- Q5_patient_search.before.sql
+-- Q5 Records desk: find a patient from a partial name ("Emeka ... Chukwu-something").
+SELECT hospital_no, first_name, last_name, date_of_birth, phone
+FROM patient
+WHERE last_name ILIKE '%chukw%' AND first_name ILIKE '%emek%'
+ORDER BY last_name, first_name;
+
+
+Sort  (cost=1933.02..1933.31 rows=117 width=44) (actual time=9.916..9.918 rows=113 loops=1)
+  Sort Key: last_name, first_name
+  Sort Method: quicksort  Memory: 33kB
+  Buffers: shared hit=296 read=733
+  ->  Seq Scan on patient  (cost=0.00..1929.00 rows=117 width=44) (actual time=0.023..9.889 rows=113 loops=1)
+        Filter: (((last_name)::text ~~* '%chukw%'::text) AND ((first_name)::text ~~* '%emek%'::text))
+        Rows Removed by Filter: 59887
+        Buffers: shared hit=296 read=733
+Settings: search_path = 'hms, public'
+Planning:
+  Buffers: shared hit=6
+Planning Time: 0.076 ms
+Execution Time: 9.924 ms

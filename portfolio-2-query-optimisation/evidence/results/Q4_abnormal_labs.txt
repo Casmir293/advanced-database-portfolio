@@ -1,0 +1,37 @@
+SET search_path=hms;
+SET
+Q4_abnormal_labs: first 15 rows (full count in benchmark_results.md)
+SELECT * FROM (
+-- Q4 (optimised): SQL unchanged; served by partial index lab_result(resulted_at) WHERE abnormal_flag <> 'N'.
+SELECT r.resulted_at, p.hospital_no, p.last_name, t.name AS test,
+       COALESCE(r.value_num::text, r.value_text) AS result, t.unit, r.abnormal_flag, o.priority
+FROM lab_result r
+JOIN lab_order o  USING (order_id)
+JOIN encounter e  USING (encounter_id)
+JOIN patient p    ON p.patient_id = e.patient_id
+JOIN lab_test t   USING (test_code)
+WHERE r.abnormal_flag <> 'N'
+  AND r.resulted_at >= TIMESTAMPTZ '2026-10-26 00:00+01'
+  AND r.resulted_at <  TIMESTAMPTZ '2026-11-02 00:00+01'
+  AND e.branch_id = 1
+ORDER BY CASE o.priority WHEN 'STAT' THEN 1 WHEN 'URGENT' THEN 2 ELSE 3 END, r.resulted_at DESC
+) q LIMIT 15;
+          resulted_at          | hospital_no | last_name |          test           |         result          |  unit   | abnormal_flag | priority 
+-------------------------------+-------------+-----------+-------------------------+-------------------------+---------+---------------+----------
+ 2026-11-01 00:34:25.5597+01   | USH-0019925 | Ihekwoaba | Serum sodium            | 133.21                  | mmol/L  | L             | STAT
+ 2026-11-01 00:34:25.5597+01   | USH-0019925 | Ihekwoaba | Serum potassium         | 2.99                    | mmol/L  | L             | STAT
+ 2026-10-31 17:59:40.118806+01 | USH-0017398 | Okafor    | Serum potassium         | 3.08                    | mmol/L  | L             | STAT
+ 2026-10-31 14:13:36.704972+01 | USH-0055773 | Asogwa    | Haemoglobin             | 10.24                   | g/dL    | L             | STAT
+ 2026-10-31 14:13:36.704972+01 | USH-0055773 | Asogwa    | Packed cell volume      | 33.16                   | %       | L             | STAT
+ 2026-10-31 14:13:36.704972+01 | USH-0055773 | Asogwa    | White blood cell count  | 13.13                   | x10^9/L | H             | STAT
+ 2026-10-31 12:00:37.989952+01 | USH-0059864 | Nnaji     | Malaria parasite (film) | P. falciparum seen (++) |         | A             | STAT
+ 2026-10-31 04:59:57.907895+01 | USH-0003328 | Okonkwo   | Malaria parasite (film) | P. falciparum seen (++) |         | A             | STAT
+ 2026-10-31 03:55:33.478451+01 | USH-0013708 | Okafor    | Malaria parasite (film) | P. falciparum seen (++) |         | A             | STAT
+ 2026-10-31 03:55:33.478451+01 | USH-0013708 | Okafor    | Packed cell volume      | 52.08                   | %       | H             | STAT
+ 2026-10-31 03:32:24.383619+01 | USH-0014867 | Ani       | Platelet count          | 461.82                  | x10^9/L | H             | STAT
+ 2026-10-30 17:21:07.38081+01  | USH-0024573 | Anyanwu   | Packed cell volume      | 30.94                   | %       | L             | STAT
+ 2026-10-30 15:34:17.648199+01 | USH-0053921 | Nnamani   | Serum creatinine        | 124.58                  | umol/L  | H             | STAT
+ 2026-10-30 15:34:17.648199+01 | USH-0053921 | Nnamani   | Serum potassium         | 3.36                    | mmol/L  | L             | STAT
+ 2026-10-30 12:58:46.38957+01  | USH-0006133 | Ezeh      | Serum creatinine        | 50.78                   | umol/L  | L             | STAT
+(15 rows)
+

@@ -1,0 +1,40 @@
+SET search_path=hms;
+SET
+Q6_outstanding_balances: first 15 rows (full count in benchmark_results.md)
+SELECT * FROM (
+-- Q6 (optimised): filter first, aggregate later. Only OPEN/PARTIAL invoices at the
+-- branch are found (partial index), then their lines and payments are summed per
+-- invoice through LATERAL subqueries that use the PK / payment(invoice_id) indexes.
+SELECT i.invoice_id, p.hospital_no, p.last_name, i.issued_at,
+       t.total AS total_amount, COALESCE(pd.paid, 0) AS amount_paid,
+       t.total - COALESCE(pd.paid, 0) AS balance
+FROM invoice i
+JOIN patient p USING (patient_id)
+CROSS JOIN LATERAL (SELECT SUM(qty * unit_price) AS total FROM invoice_line l
+                    WHERE l.invoice_id = i.invoice_id) t
+LEFT JOIN LATERAL (SELECT SUM(amount) AS paid FROM payment y
+                   WHERE y.invoice_id = i.invoice_id) pd ON true
+WHERE i.status IN ('OPEN', 'PARTIAL') AND i.branch_id = 2
+  AND i.issued_at < TIMESTAMPTZ '2026-10-03 00:00+01'
+ORDER BY balance DESC
+LIMIT 50
+) q LIMIT 15;
+ invoice_id | hospital_no | last_name |       issued_at        | total_amount | amount_paid |  balance  
+------------+-------------+-----------+------------------------+--------------+-------------+-----------
+     353261 | USH-0004458 | Danjuma   | 2025-11-12 16:00:00+01 |    151340.00 |           0 | 151340.00
+     344961 | USH-0009483 | Chukwuma  | 2023-04-29 13:00:00+01 |    151340.00 |           0 | 151340.00
+     350216 | USH-0016701 | Okonkwo   | 2025-01-02 13:00:00+01 |    145340.00 |           0 | 145340.00
+     349157 | USH-0012276 | Asogwa    | 2024-09-08 18:00:00+01 |    143700.00 |           0 | 143700.00
+     352928 | USH-0020175 | Okoro     | 2025-10-08 15:00:00+01 |    143700.00 |           0 | 143700.00
+     347733 | USH-0008083 | Aneke     | 2024-04-06 16:00:00+01 |    143700.00 |           0 | 143700.00
+     353831 | USH-0023169 | Okpara    | 2026-01-05 14:00:00+01 |    143700.00 |           0 | 143700.00
+     354405 | USH-0006048 | Okonkwo   | 2026-02-28 13:00:00+01 |    136340.00 |           0 | 136340.00
+     349569 | USH-0009364 | Okafor    | 2024-10-23 17:00:00+01 |    128700.00 |           0 | 128700.00
+     346068 | USH-0007440 | Ani       | 2023-09-19 13:00:00+01 |    128700.00 |           0 | 128700.00
+     345380 | USH-0014516 | Ezeani    | 2023-06-16 17:00:00+01 |    128700.00 |           0 | 128700.00
+     346370 | USH-0013476 | Obiora    | 2023-10-25 18:00:00+01 |    128700.00 |           0 | 128700.00
+     352441 | USH-0030226 | Eze       | 2025-08-16 19:00:00+01 |    128700.00 |           0 | 128700.00
+     352882 | USH-0026267 | Ozor      | 2025-09-30 17:00:00+01 |    128700.00 |           0 | 128700.00
+     347676 | USH-0026402 | Obi       | 2024-03-28 17:00:00+01 |    128700.00 |           0 | 128700.00
+(15 rows)
+

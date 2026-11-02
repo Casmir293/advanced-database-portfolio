@@ -1,0 +1,55 @@
+-- Q6_outstanding_balances.after.sql
+-- Q6 (optimised): filter first, aggregate later. Only OPEN/PARTIAL invoices at the
+-- branch are found (partial index), then their lines and payments are summed per
+-- invoice through LATERAL subqueries that use the PK / payment(invoice_id) indexes.
+SELECT i.invoice_id, p.hospital_no, p.last_name, i.issued_at,
+       t.total AS total_amount, COALESCE(pd.paid, 0) AS amount_paid,
+       t.total - COALESCE(pd.paid, 0) AS balance
+FROM invoice i
+JOIN patient p USING (patient_id)
+CROSS JOIN LATERAL (SELECT SUM(qty * unit_price) AS total FROM invoice_line l
+                    WHERE l.invoice_id = i.invoice_id) t
+LEFT JOIN LATERAL (SELECT SUM(amount) AS paid FROM payment y
+                   WHERE y.invoice_id = i.invoice_id) pd ON true
+WHERE i.status IN ('OPEN', 'PARTIAL') AND i.branch_id = 2
+  AND i.issued_at < TIMESTAMPTZ '2026-10-03 00:00+01'
+ORDER BY balance DESC
+LIMIT 50;
+
+
+Limit  (cost=65290.84..65290.97 rows=50 width=130) (actual time=40.981..40.985 rows=50 loops=1)
+  Buffers: shared hit=52497 read=14634 written=143
+  ->  Sort  (cost=65290.84..65311.77 rows=8370 width=130) (actual time=40.981..40.983 rows=50 loops=1)
+        Sort Key: (((sum(((l.qty)::numeric * l.unit_price))) - COALESCE((sum(y.amount)), '0'::numeric))) DESC
+        Sort Method: top-N heapsort  Memory: 35kB
+        Buffers: shared hit=52497 read=14634 written=143
+        ->  Nested Loop Left Join  (cost=2386.11..65012.80 rows=8370 width=130) (actual time=5.547..40.080 rows=7850 loops=1)
+              Buffers: shared hit=52497 read=14634 written=143
+              ->  Nested Loop  (cost=2383.46..42685.82 rows=8370 width=66) (actual time=5.540..31.954 rows=7850 loops=1)
+                    Buffers: shared hit=27035 read=12634 written=119
+                    ->  Hash Join  (cost=2379.29..7583.34 rows=8370 width=34) (actual time=5.530..10.233 rows=7850 loops=1)
+                          Hash Cond: (i.patient_id = p.patient_id)
+                          Buffers: shared hit=5137 read=2857 written=26
+                          ->  Index Scan using ix_invoice_unpaid_branch on invoice i  (cost=0.29..5182.37 rows=8370 width=20) (actual time=0.010..3.581 rows=7850 loops=1)
+                                Index Cond: ((branch_id = 2) AND (issued_at < '2026-10-03 00:00:00+01'::timestamp with time zone))
+                                Buffers: shared hit=4108 read=2857 written=26
+                          ->  Hash  (cost=1629.00..1629.00 rows=60000 width=22) (actual time=5.515..5.515 rows=60000 loops=1)
+                                Buckets: 65536  Batches: 1  Memory Usage: 3790kB
+                                Buffers: shared hit=1029
+                                ->  Seq Scan on patient p  (cost=0.00..1629.00 rows=60000 width=22) (actual time=0.002..2.590 rows=60000 loops=1)
+                                      Buffers: shared hit=1029
+                    ->  Aggregate  (cost=4.17..4.18 rows=1 width=32) (actual time=0.003..0.003 rows=1 loops=7850)
+                          Buffers: shared hit=21898 read=9777 written=93
+                          ->  Index Scan using invoice_line_pkey on invoice_line l  (cost=0.43..4.14 rows=4 width=9) (actual time=0.002..0.002 rows=4 loops=7850)
+                                Index Cond: (invoice_id = i.invoice_id)
+                                Buffers: shared hit=21898 read=9777 written=93
+              ->  Aggregate  (cost=2.65..2.65 rows=1 width=32) (actual time=0.001..0.001 rows=1 loops=7850)
+                    Buffers: shared hit=25462 read=2000 written=24
+                    ->  Index Scan using ix_payment_invoice on payment y  (cost=0.42..2.64 rows=1 width=6) (actual time=0.001..0.001 rows=0 loops=7850)
+                          Index Cond: (invoice_id = i.invoice_id)
+                          Buffers: shared hit=25462 read=2000 written=24
+Settings: search_path = 'hms, public', random_page_cost = '1.1'
+Planning:
+  Buffers: shared hit=74 read=1
+Planning Time: 0.281 ms
+Execution Time: 41.007 ms
