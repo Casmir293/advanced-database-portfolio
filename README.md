@@ -26,7 +26,7 @@ clinics in Nsukka and Awka. All five portfolios use this one organisation.
 | 2 | Query processing and optimisation | [portfolio-2-query-optimisation](portfolio-2-query-optimisation/) | PostgreSQL `EXPLAIN (ANALYZE, BUFFERS)` |
 | 3 | Transactions and concurrency | [portfolio-3-transactions-concurrency](portfolio-3-transactions-concurrency/) | PostgreSQL + Python (psycopg) |
 | 4 | NoSQL and advanced data models | [portfolio-4-nosql](portfolio-4-nosql/) | MongoDB 9, Redis |
-| 5 | Distributed and cloud databases | portfolio-5-distributed-cloud | PostgreSQL streaming replication, postgres_fdw sharding, MongoDB replica set |
+| 5 | Distributed and cloud databases | [portfolio-5-distributed-cloud](portfolio-5-distributed-cloud/) | PostgreSQL streaming replication, postgres_fdw sharding, MongoDB replica set |
 
 ## Environment
 

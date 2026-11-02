@@ -1,0 +1,27 @@
+digraph lab {
+  graph [rankdir=LR, fontname="Helvetica", fontsize=18, label="Portfolio 5 lab topology (all processes on one laptop, one 'site' per cluster)", labelloc=t, nodesep=0.4, ranksep=1.1];
+  node  [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11, fillcolor="#FFFFFF"];
+  edge  [fontname="Helvetica", fontsize=10];
+  subgraph cluster_enu { label="Enugu data centre"; style="rounded,filled"; fillcolor="#E8EEF7";
+    pg_primary [label="PostgreSQL PRIMARY\n:5433  (read/write)", fillcolor="#2F4B7C", fontcolor=white];
+    coord      [label="Coordinator udoka_hms :5432\npostgres_fdw, dist.appointment\nPARTITION BY LIST(branch_id)"];
+    shard1     [label="shard1 :5436\nbranch 1 (ENU)\n257,099 appointments"];
+    m1         [label="mongod :27018\npriority 2 (PRIMARY)", fillcolor="#E9F5EC"];
+  }
+  subgraph cluster_nsk { label="Nsukka DR site"; style="rounded,filled"; fillcolor="#FDF1E4";
+    pg_nsk [label="replica_nsk :5434\nSYNCHRONOUS standby\n(promoted in P4)"];
+    shard2 [label="shard2 :5437\nbranches 2,3 (NSK, AWK)\n157,234 appointments"];
+    m2     [label="mongod :27019\npriority 1", fillcolor="#E9F5EC"];
+  }
+  subgraph cluster_awk { label="Awka clinic"; style="rounded,filled"; fillcolor="#F3E8F7";
+    pg_awk [label="replica_awk :5435\nASYNC read replica\n(reporting, local reads)"];
+    m3     [label="mongod :27020\npriority 1", fillcolor="#E9F5EC"];
+  }
+  pg_primary -> pg_nsk [label="WAL stream, sync\n(slot_nsk)", color="#B03A2E", penwidth=2];
+  pg_primary -> pg_awk [label="WAL stream, async\n(slot_awk)", style=dashed];
+  coord -> shard1 [label="FDW (async scan,\naggregate pushdown)"];
+  coord -> shard2 [label="FDW"];
+  m1 -> m2 [label="oplog", dir=both, color="#2E7D32"];
+  m1 -> m3 [label="oplog", dir=both, color="#2E7D32"];
+  m2 -> m3 [dir=both, color="#2E7D32", style=dotted, label="heartbeats"];
+}

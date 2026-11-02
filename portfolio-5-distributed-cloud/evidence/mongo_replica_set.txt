@@ -1,0 +1,21 @@
+[   0.11 s] replica set: 27018=PRIMARY, 27019=SECONDARY, 27020=SECONDARY; seeded 5000 patients
+[   0.11 s] === M1 Cost of write concern (500 single-document inserts each) ===
+[   0.22 s] w=1         j=False median 0.122 ms, p95 0.194 ms
+[   5.16 s] w=majority  j=True  median 9.982 ms, p95 14.042 ms
+[   5.16 s] w:1 is acknowledged by the primary alone and can be ROLLED BACK if that primary dies;
+[   5.16 s] w:'majority' survives any single-node failure.
+[   5.16 s] === M2 Failover while the records desk keeps registering visits ===
+[   7.18 s] before failure: 58 inserts OK; primary = ('localhost', 27018)
+[   7.18 s] Enugu primary (27018) crashes (kill -9)
+[  18.12 s] new primary elected: localhost:27019 after 10.94 s
+[  21.15 s] writer: 155 inserts OK, 2 raised an error to the application, longest write stall 10.74 s (first: ServerSelectionTimeoutError at 11.22 s)
+[  21.15 s] documents stored: 155; missing sequence numbers: [59, 60]
+[  21.15 s] replica set now: 27018=(not reachable/healthy), 27019=PRIMARY, 27020=SECONDARY
+[  21.15 s] === M3 Second failure: only one of three members left (no majority) ===
+[  24.17 s] survivor localhost:27020 state = 2 (1=PRIMARY, 2=SECONDARY)
+[  27.20 s] write refused: ServerSelectionTimeoutError - no primary can be elected without a majority
+[  27.21 s] read with readPreference=secondaryPreferred still works: {'_id': 2, 'name': {'last': 'Ezenwa', 'first': 'Ogechi'}, 'genotype': 'AA'}
+[  27.21 s] -> reads stay available (possibly stale); writes are unavailable until a majority returns.
+[  27.21 s] === M4 Recovery ===
+[  42.99 s] all members back after 15.8 s: 27018=PRIMARY, 27019=SECONDARY, 27020=SECONDARY
+[  42.99 s] Enugu (priority 2) caught up from the oplog and took back the primary role (priority takeover).

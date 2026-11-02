@@ -1,0 +1,31 @@
+digraph cloud {
+  graph [rankdir=TB, fontname="Helvetica", fontsize=18, label="Proposed production deployment for Udoka Specialist Hospital", labelloc=t, nodesep=0.5, ranksep=0.7, compound=true];
+  node  [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11, fillcolor=white];
+  edge  [fontname="Helvetica", fontsize=10];
+  subgraph cluster_sites { label="Hospital sites (dual ISP + 4G backup, site-to-site VPN)"; style="rounded,filled"; fillcolor="#F7F3E3";
+    enu [label="Enugu main hospital\nclinical apps, A&E"];
+    nsk [label="Nsukka clinic"];
+    awk [label="Awka clinic"];
+    edge_ro [label="On-site read replica (async)\nview records during internet outage", fillcolor="#FFF8E1"];
+  }
+  subgraph cluster_region { label="Cloud region (e.g. AWS af-south-1 / Azure South Africa North) or Lagos Tier-III colocation"; style="rounded,filled"; fillcolor="#E8EEF7";
+    app [label="Application tier (2+ AZs)\nHMS API, patient portal"];
+    subgraph cluster_az { label="Managed PostgreSQL, Multi-AZ"; style="rounded"; color="#2F4B7C";
+      pga [label="Primary\n(AZ-a)", fillcolor="#2F4B7C", fontcolor=white];
+      pgb [label="Synchronous standby\n(AZ-b)  RPO = 0"];
+      pgr [label="Read replica\nreporting / BI"];
+    }
+    mongo [label="Managed MongoDB replica set\n3 nodes across 3 AZs\nw:'majority' for clinical writes", fillcolor="#E9F5EC"];
+    redis [label="Managed Redis (primary + replica)\nslot holds, cache, triage queue", fillcolor="#FDECEA"];
+    bk [label="Backups: daily snapshot + continuous WAL/oplog\narchive (PITR 35 days), encrypted (KMS)", fillcolor="#F3E8F7"];
+  }
+  dr [label="DR copy in a second region\n(async cross-region replica, RPO < 1 min)", fillcolor="#FDF1E4"];
+  enu -> app; nsk -> app; awk -> app;
+  app -> pga [label="writes"]; app -> pgr [label="reports"];
+  app -> mongo; app -> redis;
+  pga -> pgb [label="sync", color="#B03A2E", penwidth=2];
+  pga -> pgr [label="async", style=dashed];
+  pga -> edge_ro [label="async over VPN", style=dashed];
+  pga -> bk [style=dotted]; mongo -> bk [style=dotted];
+  pga -> dr [label="async", style=dashed];
+}

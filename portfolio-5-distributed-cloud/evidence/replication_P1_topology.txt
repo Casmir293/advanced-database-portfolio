@@ -1,0 +1,26 @@
+[  0.000 s]              ### P1 Topology, roles and read-only standbys
+[  0.014 s] primary      > SELECT application_name, client_addr, state, sync_state, sent_lsn, replay_lsn, write_lag, flush_lag, replay_lag FROM pg_stat_replication ORDER BY 1
+[  0.015 s] primary      application_name | client_addr | state     | sync_state | sent_lsn   | replay_lsn | write_lag      | flush_lag      | replay_lag    
+                         -----------------+-------------+-----------+------------+------------+------------+----------------+----------------+---------------
+                         replica_awk      | ::1         | streaming | async      | 0/64000000 | 0/64000000 | 0:00:00.000058 | 0:00:00.000058 | 0:00:00.000058
+                         replica_nsk      | ::1         | streaming | sync       | 0/64000000 | 0/64000000 | 0:00:00.014004 | 0:00:00.014004 | 0:00:00.014004
+[  0.015 s] primary      > SELECT slot_name, slot_type, active, restart_lsn FROM pg_replication_slots ORDER BY 1
+[  0.016 s] primary      slot_name | slot_type | active | restart_lsn
+                         ----------+-----------+--------+------------
+                         slot_awk  | physical  | True   | 0/64000000 
+                         slot_nsk  | physical  | True   | 0/64000000 
+[  0.016 s] primary      > SELECT pg_is_in_recovery() AS is_standby, current_setting('port') AS port, (SELECT count(*) FROM appointment) AS appointments
+[  0.023 s] primary      is_standby | port | appointments
+                         -----------+------+-------------
+                         False      | 5433 | 414332      
+[  0.023 s] replica_nsk  > SELECT pg_is_in_recovery() AS is_standby, current_setting('port') AS port, (SELECT count(*) FROM appointment) AS appointments
+[  0.064 s] replica_nsk  is_standby | port | appointments
+                         -----------+------+-------------
+                         True       | 5434 | 414332      
+[  0.064 s] replica_awk  > SELECT pg_is_in_recovery() AS is_standby, current_setting('port') AS port, (SELECT count(*) FROM appointment) AS appointments
+[  0.108 s] replica_awk  is_standby | port | appointments
+                         -----------+------+-------------
+                         True       | 5435 | 414332      
+[  0.108 s]              -- Standbys serve reads but reject writes:
+[  0.108 s] replica_awk  > INSERT INTO appointment (patient_id, doctor_id, branch_id, scheduled_at, ends_at) VALUES (2, 30, 1, timestamptz '2027-02-01 08:00+01' + interval '30 min', timestamptz '2027-02-01 08:15+01' + interval '30 min') RETURNING appt_id
+[  0.109 s] replica_awk  ERROR 25006: cannot execute INSERT in a read-only transaction

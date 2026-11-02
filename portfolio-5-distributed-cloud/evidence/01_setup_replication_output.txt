@@ -1,0 +1,11 @@
+>> initdb primary
+>> loading the hospital database onto the primary (Portfolio 1 build script)
+>> pg_basebackup -> replica_nsk (port 5434)
+>> pg_basebackup -> replica_awk (port 5435)
+>> making replica_nsk synchronous
+ application_name |   state   | sync_state |    write_lag    |   replay_lag    
+------------------+-----------+------------+-----------------+-----------------
+ replica_awk      | streaming | async      | 00:00:00.000058 | 00:00:00.000058
+ replica_nsk      | streaming | sync       | 00:00:00.014004 | 00:00:00.014004
+(2 rows)
+

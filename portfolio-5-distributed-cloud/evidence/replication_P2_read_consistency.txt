@@ -1,0 +1,34 @@
+[  0.000 s]              ### P2 Read-your-writes and stale reads
+[  0.006 s]              -- (a) synchronous_commit = on: COMMIT waits until Nsukka has FLUSHED the WAL, not REPLAYED it.
+[  0.006 s]              --     A read on the standby immediately after commit is therefore not guaranteed to see the row.
+[  0.031 s] test         50 bookings committed on primary; visible on replica_nsk immediately after COMMIT: 49/50
+[  0.031 s]              -- (b) synchronous_commit = remote_apply: COMMIT waits until Nsukka has REPLAYED it.
+[  0.043 s] test         visible on replica_nsk immediately after COMMIT: 50/50 (avg 0.26 ms per booking incl. read)
+[  0.043 s]              -- (c) Asynchronous Awka replica: pause WAL replay to simulate a slow WAN link.
+[  0.043 s] replica_awk  > SELECT pg_wal_replay_pause()
+[  0.044 s] replica_awk  pg_wal_replay_pause
+                         -------------------
+                                            
+[  0.044 s] primary      > INSERT INTO appointment (patient_id, doctor_id, branch_id, scheduled_at, ends_at) VALUES (2, 30, 1, timestamptz '2027-02-01 08:00+01' + interval '1530 min', timestamptz '2027-02-01 08:15+01' + interval '1530 min') RETURNING appt_id
+[  0.044 s] primary      appt_id
+                         -------
+                         414433 
+[  0.044 s] replica_awk  > SELECT count(*) AS found FROM appointment WHERE appt_id = 414433
+[  0.045 s] replica_awk  found
+                         -----
+                         0    
+[  0.045 s] primary      > SELECT application_name, sync_state, pg_wal_lsn_diff(sent_lsn, replay_lsn) AS bytes_behind, replay_lag FROM pg_stat_replication ORDER BY 1
+[  0.046 s] primary      application_name | sync_state | bytes_behind | replay_lag    
+                         -----------------+------------+--------------+---------------
+                         replica_awk      | async      | 680          | 0:00:00.000068
+                         replica_nsk      | sync       | 0            | 0:00:00.000074
+[  0.046 s]              -- Awka staff would not see the new booking: a STALE READ (eventual consistency).
+[  0.046 s] replica_awk  > SELECT pg_wal_replay_resume()
+[  0.046 s] replica_awk  pg_wal_replay_resume
+                         --------------------
+                                             
+[  0.551 s] replica_awk  > SELECT count(*) AS found FROM appointment WHERE appt_id = 414433
+[  0.552 s] replica_awk  found
+                         -----
+                         1    
+[  0.552 s]              -- After replay resumes, the replica converges.

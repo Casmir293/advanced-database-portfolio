@@ -1,0 +1,58 @@
+[  0.000 s]              ### P3 Network partition between Enugu and Nsukka (CAP in practice)
+[  0.009 s]              -- Simulate the Enugu-Nsukka link failing by stopping replica_nsk.
+[  0.125 s] shell        waiting for server to shut down.... done
+                         server stopped
+[  0.125 s] primary      > SELECT application_name, sync_state FROM pg_stat_replication ORDER BY 1
+[  0.129 s] primary      application_name | sync_state
+                         -----------------+-----------
+                         replica_awk      | async     
+[  0.129 s]              -- (a) A normal booking now waits for an acknowledgement that cannot arrive:
+[  3.134 s] primary      > SELECT application_name, state, wait_event_type, wait_event, left(query, 40) AS query FROM pg_stat_activity WHERE application_name = 'lab_primary' AND wait_event = 'SyncRep'
+[  3.138 s] primary      application_name | state  | wait_event_type | wait_event | query                                   
+                         -----------------+--------+-----------------+------------+-----------------------------------------
+                         lab_primary      | active | IPC             | SyncRep    | INSERT INTO appointment (patient_id, doc
+[  3.138 s]              -- After 3 s the receptionist gives up; the server cancels the WAIT (not the commit):
+[  3.139 s] primary      booking statement returned after 3.01 s
+[  3.139 s] primary      WARNING: canceling wait for synchronous replication due to user request The transaction has already committed locally, but might not have been replicated to the standby.
+[  3.139 s]              -- The row IS committed locally but NOT on the DR site: consistency + durability were chosen
+[  3.139 s]              -- over availability (CP behaviour). Silent data-loss risk if Enugu now failed.
+[  3.139 s]              -- (b) Per-transaction downgrade for non-critical writes:
+[  3.145 s] primary      > BEGIN
+[  3.145 s] primary      BEGIN
+[  3.145 s] primary      > SET LOCAL synchronous_commit = local
+[  3.145 s] primary      SET
+[  3.145 s] primary      > INSERT INTO appointment (patient_id, doctor_id, branch_id, scheduled_at, ends_at) VALUES (2, 30, 1, timestamptz '2027-02-01 08:00+01' + interval '1560 min', timestamptz '2027-02-01 08:15+01' + interval '1560 min') RETURNING appt_id
+[  3.149 s] primary      appt_id
+                         -------
+                         414435 
+[  3.149 s] primary      > COMMIT
+[  3.149 s] primary      COMMIT
+[  3.149 s] primary      committed in 4.4 ms (available, but not yet on DR)
+[  3.149 s]              -- (c) Quorum commit: any ONE of Nsukka or Awka may acknowledge.
+[  3.149 s] primary      > ALTER SYSTEM SET synchronous_standby_names = 'ANY 1 (replica_nsk, replica_awk)'
+[  3.150 s] primary      ALTER SYSTEM
+[  3.150 s] primary      > SELECT pg_reload_conf()
+[  3.151 s] primary      pg_reload_conf
+                         --------------
+                         True          
+[  3.656 s] primary      > SELECT application_name, sync_state FROM pg_stat_replication ORDER BY 1
+[  3.659 s] primary      application_name | sync_state
+                         -----------------+-----------
+                         replica_awk      | quorum    
+[  3.659 s] primary      > INSERT INTO appointment (patient_id, doctor_id, branch_id, scheduled_at, ends_at) VALUES (2, 30, 1, timestamptz '2027-02-01 08:00+01' + interval '1575 min', timestamptz '2027-02-01 08:15+01' + interval '1575 min') RETURNING appt_id
+[  3.663 s] primary      appt_id
+                         -------
+                         414436 
+[  3.663 s] primary      committed in 3.3 ms with Awka's acknowledgement
+[  3.663 s]              -- Link restored: restart Nsukka; it catches up from its replication slot.
+[  3.792 s] primary      > ALTER SYSTEM SET synchronous_standby_names = 'FIRST 1 (replica_nsk)'
+[  3.793 s] primary      ALTER SYSTEM
+[  3.793 s] primary      > SELECT pg_reload_conf()
+[  3.793 s] primary      pg_reload_conf
+                         --------------
+                         True          
+[  5.298 s] primary      > SELECT application_name, state, sync_state, pg_wal_lsn_diff(sent_lsn, replay_lsn) AS bytes_behind FROM pg_stat_replication ORDER BY 1
+[  5.302 s] primary      application_name | state     | sync_state | bytes_behind
+                         -----------------+-----------+------------+-------------
+                         replica_awk      | streaming | async      | 0           
+                         replica_nsk      | streaming | sync       | 0           

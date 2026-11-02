@@ -1,0 +1,198 @@
+SET search_path = dist, hms, public;
+SET
+DELETE FROM dist.appointment WHERE reason IN ('Routed write', 'Transferred from ENU', 'Conflicting move');
+DELETE 2
+ANALYZE dist.appointment;
+ANALYZE
+=== D1 Data distribution: which shard holds what ===
+SELECT tableoid::regclass AS shard_partition, branch_id, count(*) AS appointments,
+       round(100.0 * count(*) / sum(count(*)) OVER (), 1) AS pct
+FROM dist.appointment GROUP BY 1, 2 ORDER BY 1, 2;
+ shard_partition  | branch_id | appointments | pct  
+------------------+-----------+--------------+------
+ appointment_enu  |         1 |       257099 | 62.1
+ appointment_east |         2 |        82860 | 20.0
+ appointment_east |         3 |        74374 | 18.0
+(3 rows)
+
+=== D2 Query that includes the shard key -> partition pruning, only shard2 is contacted ===
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT scheduled_at, patient_id, status FROM dist.appointment
+WHERE branch_id = 2 AND scheduled_at >= '2026-11-03' AND scheduled_at < '2026-11-04';
+                                                                                             QUERY PLAN                                                                                              
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on dist.appointment_east appointment
+   Output: appointment.scheduled_at, appointment.patient_id, appointment.status
+   Remote SQL: SELECT patient_id, scheduled_at, status FROM hms.appointment WHERE ((scheduled_at >= '2026-11-03 00:00:00+01')) AND ((scheduled_at < '2026-11-04 00:00:00+01')) AND ((branch_id = 2))
+(3 rows)
+
+=== D3 Query without the shard key (doctor schedule) -> scatter-gather to both shards ===
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT scheduled_at, patient_id, status FROM dist.appointment
+WHERE doctor_id = 78 AND scheduled_at >= '2026-11-03' AND scheduled_at < '2026-11-04';
+                                                                                                 QUERY PLAN                                                                                                 
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Append
+   ->  Async Foreign Scan on dist.appointment_enu appointment_1
+         Output: appointment_1.scheduled_at, appointment_1.patient_id, appointment_1.status
+         Remote SQL: SELECT patient_id, scheduled_at, status FROM hms.appointment WHERE ((scheduled_at >= '2026-11-03 00:00:00+01')) AND ((scheduled_at < '2026-11-04 00:00:00+01')) AND ((doctor_id = 78))
+   ->  Async Foreign Scan on dist.appointment_east appointment_2
+         Output: appointment_2.scheduled_at, appointment_2.patient_id, appointment_2.status
+         Remote SQL: SELECT patient_id, scheduled_at, status FROM hms.appointment WHERE ((scheduled_at >= '2026-11-03 00:00:00+01')) AND ((scheduled_at < '2026-11-04 00:00:00+01')) AND ((doctor_id = 78))
+(7 rows)
+
+=== D4 Distributed aggregate: partition-wise aggregation pushed down, shards scanned asynchronously ===
+SET enable_partitionwise_aggregate = on;
+SET
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT branch_id, status, count(*) FROM dist.appointment
+WHERE scheduled_at >= '2025-01-01' AND scheduled_at < '2026-01-01'
+GROUP BY branch_id, status;
+                                                                                          QUERY PLAN                                                                                          
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Append
+   ->  Async Foreign Scan
+         Output: appointment.branch_id, appointment.status, (count(*))
+         Relations: Aggregate on (dist.appointment_enu appointment)
+         Remote SQL: SELECT branch_id, status, count(*) FROM hms.appointment WHERE ((scheduled_at >= '2025-01-01 00:00:00+01')) AND ((scheduled_at < '2026-01-01 00:00:00+01')) GROUP BY 1, 2
+   ->  Async Foreign Scan
+         Output: appointment_1.branch_id, appointment_1.status, (count(*))
+         Relations: Aggregate on (dist.appointment_east appointment_1)
+         Remote SQL: SELECT branch_id, status, count(*) FROM hms.appointment WHERE ((scheduled_at >= '2025-01-01 00:00:00+01')) AND ((scheduled_at < '2026-01-01 00:00:00+01')) GROUP BY 1, 2
+(9 rows)
+
+SELECT branch_id, status, count(*) FROM dist.appointment
+WHERE scheduled_at >= '2025-01-01' AND scheduled_at < '2026-01-01'
+GROUP BY branch_id, status ORDER BY 1, 2;
+ branch_id |  status   | count 
+-----------+-----------+-------
+         1 | CANCELLED |  6879
+         1 | COMPLETED | 54993
+         1 | NO_SHOW   |  6773
+         2 | CANCELLED |  2207
+         2 | COMPLETED | 17905
+         2 | NO_SHOW   |  2195
+         3 | CANCELLED |  2013
+         3 | COMPLETED | 16790
+         3 | NO_SHOW   |  2062
+(9 rows)
+
+=== D5 Same aggregate: local table vs sharded (both on one laptop, so this measures FDW overhead, not scale-out) ===
+Timing is on.
+SELECT count(*) FROM hms.appointment  WHERE scheduled_at >= '2025-01-01' AND scheduled_at < '2026-01-01';
+ count  
+--------
+ 111817
+(1 row)
+
+Time: 6.848 ms
+SELECT count(*) FROM dist.appointment WHERE scheduled_at >= '2025-01-01' AND scheduled_at < '2026-01-01';
+ count  
+--------
+ 111817
+(1 row)
+
+Time: 29.329 ms
+Timing is off.
+=== D6 Writes are routed by shard key; ids come from the coordinator sequence ===
+INSERT INTO dist.appointment
+VALUES (nextval('dist.appt_id_seq'), 2, 78, 3, '2027-03-01 09:00+01', '2027-03-01 09:15+01', 'BOOKED', 'Routed write', now()),
+       (nextval('dist.appt_id_seq'), 2, 30, 1, '2027-03-01 09:00+01', '2027-03-01 09:15+01', 'BOOKED', 'Routed write', now());
+INSERT 0 2
+SELECT tableoid::regclass AS landed_on, appt_id, doctor_id, branch_id FROM dist.appointment WHERE reason = 'Routed write';
+    landed_on     | appt_id | doctor_id | branch_id 
+------------------+---------+-----------+-----------
+ appointment_east | 5000004 |        78 |         3
+ appointment_enu  | 5000005 |        30 |         1
+(2 rows)
+
+=== D7 Shard-local constraint still works (doctor 78 double-booked on shard2) ===
+INSERT INTO dist.appointment
+VALUES (nextval('dist.appt_id_seq'), 3, 78, 3, '2027-03-01 09:05+01', '2027-03-01 09:20+01', 'BOOKED', 'Routed write', now());
+psql:sql/sharding_demo.sql:48: ERROR:  conflicting key value violates exclusion constraint "no_doctor_double_booking"
+DETAIL:  Key (doctor_id, tstzrange(scheduled_at, ends_at))=(78, ["2027-03-01 08:05:00+00","2027-03-01 08:20:00+00")) conflicts with existing key (doctor_id, tstzrange(scheduled_at, ends_at))=(78, ["2027-03-01 08:00:00+00","2027-03-01 08:15:00+00")).
+CONTEXT:  remote SQL command: INSERT INTO hms.appointment(appt_id, patient_id, doctor_id, branch_id, scheduled_at, ends_at, status, reason, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+=== D8 A row whose shard key does not match any partition is rejected ===
+INSERT INTO dist.appointment
+VALUES (nextval('dist.appt_id_seq'), 3, 30, 4, '2027-03-02 09:00+01', '2027-03-02 09:15+01', 'BOOKED', 'Routed write', now());
+psql:sql/sharding_demo.sql:52: ERROR:  no partition of relation "appointment" found for row
+DETAIL:  Partition key of the failing row contains (branch_id) = (4).
+=== D9 Two-phase commit across shards: patient transfers an appointment from Enugu to Awka ===
+You are now connected to database "udoka_shard" as user "postgres" on host "localhost" (address "::1") at port "5436".
+BEGIN;
+BEGIN
+DELETE FROM hms.appointment WHERE reason = 'Routed write' AND branch_id = 1 RETURNING appt_id, branch_id;
+ appt_id | branch_id 
+---------+-----------
+ 5000005 |         1
+(1 row)
+
+DELETE 1
+PREPARE TRANSACTION 'move_appt_1';
+PREPARE TRANSACTION
+You are now connected to database "udoka_shard" as user "postgres" on host "localhost" (address "::1") at port "5437".
+BEGIN;
+BEGIN
+INSERT INTO hms.appointment VALUES (5900001, 2, 70, 3, '2027-03-01 11:00+01', '2027-03-01 11:15+01', 'BOOKED', 'Transferred from ENU', now());
+INSERT 0 1
+PREPARE TRANSACTION 'move_appt_1';
+PREPARE TRANSACTION
+SELECT gid, prepared, database FROM pg_prepared_xacts;
+     gid     |           prepared            |  database   
+-------------+-------------------------------+-------------
+ move_appt_1 | 2026-11-02 18:33:31.092663+01 | udoka_shard
+(1 row)
+
+--- phase 1 complete on both shards (neither change is visible yet) -> phase 2: COMMIT PREPARED
+COMMIT PREPARED 'move_appt_1';
+COMMIT PREPARED
+You are now connected to database "udoka_shard" as user "postgres" on host "localhost" (address "::1") at port "5436".
+COMMIT PREPARED 'move_appt_1';
+COMMIT PREPARED
+You are now connected to database "udoka_hms" as user "casmironyeka" on host "localhost" (address "::1") at port "5432".
+SET search_path = dist, hms, public;
+SET
+SELECT tableoid::regclass AS shard, appt_id, branch_id, reason FROM dist.appointment
+WHERE reason IN ('Routed write', 'Transferred from ENU') ORDER BY appt_id;
+      shard       | appt_id | branch_id |        reason        
+------------------+---------+-----------+----------------------
+ appointment_east | 5000004 |         3 | Routed write
+ appointment_east | 5900001 |         3 | Transferred from ENU
+(2 rows)
+
+=== D10 2PC abort path: shard2 cannot prepare (double booking) -> shard1 rolls back its prepared delete ===
+You are now connected to database "udoka_shard" as user "postgres" on host "localhost" (address "::1") at port "5436".
+BEGIN;
+BEGIN
+DELETE FROM hms.appointment WHERE appt_id = (SELECT min(appt_id) FROM hms.appointment WHERE status = 'BOOKED')
+RETURNING appt_id, doctor_id, scheduled_at;
+ appt_id | doctor_id |      scheduled_at      
+---------+-----------+------------------------
+  404211 |        30 | 2026-11-02 08:00:00+01
+(1 row)
+
+DELETE 1
+PREPARE TRANSACTION 'move_appt_2';
+PREPARE TRANSACTION
+You are now connected to database "udoka_shard" as user "postgres" on host "localhost" (address "::1") at port "5437".
+BEGIN;
+BEGIN
+INSERT INTO hms.appointment VALUES (5900002, 2, 78, 3, '2027-03-01 09:00+01', '2027-03-01 09:15+01', 'BOOKED', 'Conflicting move', now());
+psql:sql/sharding_demo.sql:83: ERROR:  conflicting key value violates exclusion constraint "no_doctor_double_booking"
+DETAIL:  Key (doctor_id, tstzrange(scheduled_at, ends_at))=(78, ["2027-03-01 09:00:00+01","2027-03-01 09:15:00+01")) conflicts with existing key (doctor_id, tstzrange(scheduled_at, ends_at))=(78, ["2027-03-01 09:00:00+01","2027-03-01 09:15:00+01")).
+ROLLBACK;
+ROLLBACK
+--- shard2 voted NO -> coordinator aborts the prepared transaction on shard1
+You are now connected to database "udoka_shard" as user "postgres" on host "localhost" (address "::1") at port "5436".
+ROLLBACK PREPARED 'move_appt_2';
+ROLLBACK PREPARED
+SELECT count(*) AS prepared_left FROM pg_prepared_xacts;
+ prepared_left 
+---------------
+             0
+(1 row)
+
+=== cleanup of demo rows ===
+You are now connected to database "udoka_hms" as user "casmironyeka" on host "localhost" (address "::1") at port "5432".
+DELETE FROM dist.appointment WHERE reason IN ('Routed write', 'Transferred from ENU');
+DELETE 2

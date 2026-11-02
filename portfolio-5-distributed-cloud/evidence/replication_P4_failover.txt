@@ -1,0 +1,49 @@
+[  0.000 s]              ### P4 Primary failure and failover to the Nsukka DR site
+[  0.017 s] primary      > SELECT count(*) AS probes, max(id) AS last_probe FROM failover_probe
+[  0.017 s] primary      probes | last_probe
+                         -------+-----------
+                         5      | 5         
+[  0.017 s] primary      last booking committed on primary: appt_id 414437
+[  0.017 s] primary      > SELECT ('x' || substr(pg_walfile_name(pg_current_wal_lsn()), 1, 8))::bit(32)::int AS timeline_id
+[  0.018 s] primary      timeline_id
+                         -----------
+                         1          
+[  0.018 s]              -- Enugu primary crashes (power failure): pg_ctl stop -m immediate (no clean shutdown).
+[  0.130 s] shell        waiting for server to shut down.... done
+                         server stopped
+[  0.135 s] app          connection refused: connection failed: connection to server at "127.0.0.1", port 5433 failed: could not receiv
+[  0.135 s]              -- Operator (or Patroni/repmgr in production) promotes the synchronous standby:
+[  0.142 s] replica_nsk  > SELECT pg_promote(wait => true)
+[  0.244 s] replica_nsk  pg_promote
+                         ----------
+                         True      
+[  0.244 s] replica_nsk  > SELECT pg_is_in_recovery() AS is_standby, ('x' || substr(pg_walfile_name(pg_current_wal_lsn()), 1, 8))::bit(32)::int AS timeline_id
+[  0.248 s] replica_nsk  is_standby | timeline_id
+                         -----------+------------
+                         False      | 2          
+[  0.256 s] replica_nsk  first write accepted on new primary (appt_id 414465) 0.23 s after the crash  -> RTO (scripted)
+[  0.256 s]              -- RPO check - is every transaction committed before the crash present?
+[  0.256 s] replica_nsk  > SELECT count(*) AS probes, max(id) AS last_probe FROM failover_probe
+[  0.257 s] replica_nsk  probes | last_probe
+                         -------+-----------
+                         5      | 5         
+[  0.257 s] replica_nsk  > SELECT appt_id, scheduled_at FROM appointment WHERE appt_id = 414437
+[  0.258 s] replica_nsk  appt_id | scheduled_at             
+                         --------+--------------------------
+                         414437  | 2027-02-02 10:30:00+01:00
+[  0.258 s]              -- RPO = 0: synchronous replication guaranteed nothing acknowledged to a user was lost.
+[  0.258 s]              -- Re-point the Awka async replica at the new primary (timeline switch).
+[  0.258 s] replica_nsk  > SELECT pg_create_physical_replication_slot('slot_awk')
+[  0.259 s] replica_nsk  pg_create_physical_replication_slot
+                         -----------------------------------
+                         ('slot_awk', None)                 
+[  2.485 s] replica_nsk  > SELECT application_name, state, sync_state FROM pg_stat_replication
+[  2.490 s] replica_nsk  application_name | state     | sync_state
+                         -----------------+-----------+-----------
+                         replica_awk      | streaming | async     
+[  2.500 s] replica_awk  > SELECT pg_is_in_recovery() AS is_standby, (SELECT count(*) FROM appointment WHERE appt_id = 414465) AS sees_new_write
+[  2.503 s] replica_awk  is_standby | sees_new_write
+                         -----------+---------------
+                         True       | 1             
+[  2.503 s]              -- Old Enugu primary must NOT be restarted as a primary (split brain). It would rejoin as a
+[  2.503 s]              -- standby of Nsukka after pg_rewind; in production a fencing step (STONITH) enforces this.
