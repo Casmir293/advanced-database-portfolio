@@ -1,0 +1,71 @@
+[     0.0 ms] ### S9_deadlock: Inter-branch stock transfers in opposite directions: deadlock and the lock-ordering fix
+[    14.0 ms] -- Enugu sends 10 packs of drug 1 to Nsukka while Nsukka sends 5 packs back to Enugu.
+[    14.0 ms] -- (1) NAIVE: each debits its own row first, then credits the other.
+[    14.0 ms] enu_store  > BEGIN
+[    14.2 ms] enu_store  BEGIN
+[    14.2 ms] nsk_store  > BEGIN
+[    14.4 ms] nsk_store  BEGIN
+[    14.4 ms] enu_store  > UPDATE pharmacy_stock SET qty_on_hand = qty_on_hand - 10 WHERE drug_id = 1 AND branch_id = 1
+[    16.0 ms] enu_store  UPDATE 1
+[    16.0 ms] nsk_store  > UPDATE pharmacy_stock SET qty_on_hand = qty_on_hand - 5  WHERE drug_id = 1 AND branch_id = 2
+[    17.1 ms] nsk_store  UPDATE 1
+[    17.1 ms] enu_store  > UPDATE pharmacy_stock SET qty_on_hand = qty_on_hand + 10 WHERE drug_id = 1 AND branch_id = 2   (sent; may block)
+[   421.7 ms] observer   > SELECT application_name AS session, pid, state, wait_event_type, wait_event,
+                                        pg_blocking_pids(pid) AS blocked_by
+                                 FROM pg_stat_activity WHERE pid = ANY(%s) ORDER BY application_name
+[   424.8 ms] observer   session   | pid   | state               | wait_event_type | wait_event    | blocked_by
+                         ----------+-------+---------------------+-----------------+---------------+-----------
+                         enu_store | 34354 | active              | Lock            | transactionid | [34355]   
+                         nsk_store | 34355 | idle in transaction | Client          | ClientRead    | []        
+                         (2 rows)
+[   424.8 ms] nsk_store  > UPDATE pharmacy_stock SET qty_on_hand = qty_on_hand + 5  WHERE drug_id = 1 AND branch_id = 1
+[  1087.5 ms] enu_store  unblocked -> ERROR 40P01: deadlock detected
+                         DETAIL: Process 34354 waits for ShareLock on transaction 1290; blocked by process 34355.
+                         Process 34355 waits for ShareLock on transaction 1289; blocked by process 34354.
+[  1087.7 ms] nsk_store  UPDATE 1
+[  1087.8 ms] enu_store  > COMMIT
+[  1088.3 ms] enu_store  ROLLBACK
+[  1088.3 ms] nsk_store  > COMMIT
+[  1089.4 ms] nsk_store  COMMIT
+[  1089.5 ms] -- PostgreSQL's deadlock detector (deadlock_timeout = 1s) aborted one transaction (its COMMIT
+[  1089.5 ms] -- becomes ROLLBACK). Only the survivor's transfer is applied; the victim must be retried.
+[  1089.5 ms] observer   > SELECT branch_id, qty_on_hand FROM pharmacy_stock WHERE drug_id = 1 AND branch_id IN (1, 2) ORDER BY 1
+[  1090.5 ms] observer   branch_id | qty_on_hand
+                         ----------+------------
+                         1         | 1005       
+                         2         | 995        
+                         (2 rows)
+[  1090.5 ms] -- (2) FIX: transfer_stock() locks both rows in branch_id order before updating.
+[  1090.8 ms] enu_store  > BEGIN
+[  1090.9 ms] enu_store  BEGIN
+[  1090.9 ms] nsk_store  > BEGIN
+[  1091.0 ms] nsk_store  BEGIN
+[  1091.0 ms] enu_store  > SELECT transfer_stock(1, 1::smallint, 2::smallint, 10)
+[  1094.8 ms] enu_store  transfer_stock
+                         --------------
+                                       
+                         (1 row)
+[  1094.8 ms] nsk_store  > SELECT transfer_stock(1, 2::smallint, 1::smallint, 5)   (sent; may block)
+[  1500.2 ms] observer   > SELECT application_name AS session, pid, state, wait_event_type, wait_event,
+                                        pg_blocking_pids(pid) AS blocked_by
+                                 FROM pg_stat_activity WHERE pid = ANY(%s) ORDER BY application_name
+[  1501.5 ms] observer   session   | pid   | state               | wait_event_type | wait_event    | blocked_by
+                         ----------+-------+---------------------+-----------------+---------------+-----------
+                         enu_store | 34354 | idle in transaction | Client          | ClientRead    | []        
+                         nsk_store | 34355 | active              | Lock            | transactionid | [34354]   
+                         (2 rows)
+[  1501.5 ms] enu_store  > COMMIT
+[  1502.2 ms] enu_store  COMMIT
+[  1503.4 ms] nsk_store  unblocked -> transfer_stock
+                         --------------
+                                       
+                         (1 row)
+[  1503.5 ms] nsk_store  > COMMIT
+[  1504.2 ms] nsk_store  COMMIT
+[  1504.3 ms] observer   > SELECT branch_id, qty_on_hand FROM pharmacy_stock WHERE drug_id = 1 AND branch_id IN (1, 2) ORDER BY 1
+[  1505.0 ms] observer   branch_id | qty_on_hand
+                         ----------+------------
+                         1         | 995        
+                         2         | 1005       
+                         (2 rows)
+[  1505.0 ms] -- Both transfers committed: 1000 - 10 + 5 = 995 at Enugu, 1000 + 10 - 5 = 1005 at Nsukka.

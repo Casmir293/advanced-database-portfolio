@@ -1,0 +1,61 @@
+[     0.0 ms] ### S7_double_booking: Two receptionists book the same doctor slot (exclusion constraint as concurrency control)
+[     9.5 ms] -- (1) Both try 10:00 with Dr #30. First one commits.
+[     9.5 ms] desk_ENU   > BEGIN
+[     9.6 ms] desk_ENU   BEGIN
+[     9.6 ms] desk_call  > BEGIN
+[     9.7 ms] desk_call  BEGIN
+[     9.7 ms] desk_ENU   > INSERT INTO appointment (patient_id, doctor_id, branch_id, scheduled_at, ends_at) VALUES (%s, 30, 1, '2027-01-11 10:00+01', timestamptz '2027-01-11 10:00+01' + interval '15 min') RETURNING appt_id
+[    14.9 ms] desk_ENU   appt_id
+                         -------
+                         894337 
+                         (1 row)
+[    14.9 ms] desk_call  > INSERT INTO appointment (patient_id, doctor_id, branch_id, scheduled_at, ends_at) VALUES (%s, 30, 1, '2027-01-11 10:00+01', timestamptz '2027-01-11 10:00+01' + interval '15 min') RETURNING appt_id   (sent; may block)
+[   420.1 ms] -- desk_call cannot decide yet: it must wait to see whether desk_ENU commits.
+[   420.1 ms] observer   > SELECT application_name AS session, pid, state, wait_event_type, wait_event,
+                                        pg_blocking_pids(pid) AS blocked_by
+                                 FROM pg_stat_activity WHERE pid = ANY(%s) ORDER BY application_name
+[   424.3 ms] observer   session   | pid   | state               | wait_event_type | wait_event    | blocked_by
+                         ----------+-------+---------------------+-----------------+---------------+-----------
+                         desk_call | 34340 | active              | Lock            | transactionid | [34339]   
+                         desk_ENU  | 34339 | idle in transaction | Client          | ClientRead    | []        
+                         (2 rows)
+[   424.4 ms] observer   > SELECT l.pid, a.application_name, l.locktype, l.mode, l.granted
+                                        FROM pg_locks l JOIN pg_stat_activity a USING (pid)
+                                        WHERE a.application_name IN ('desk_ENU','desk_call') AND l.locktype = 'transactionid'
+                                        ORDER BY l.granted DESC
+[   426.9 ms] observer   pid   | application_name | locktype      | mode          | granted
+                         ------+------------------+---------------+---------------+--------
+                         34340 | desk_call        | transactionid | ExclusiveLock | True   
+                         34339 | desk_ENU         | transactionid | ExclusiveLock | True   
+                         34340 | desk_call        | transactionid | ShareLock     | False  
+                         (3 rows)
+[   426.9 ms] desk_ENU   > COMMIT
+[   427.4 ms] desk_ENU   COMMIT
+[   428.0 ms] desk_call  unblocked -> ERROR 23P01: conflicting key value violates exclusion constraint "no_doctor_double_booking"
+                         DETAIL: Key (doctor_id, tstzrange(scheduled_at, ends_at))=(30, ["2027-01-11 10:00:00+01","2027-01-11 10:15:00+01")) conflicts with existing key (doctor_id, tstzrange(scheduled_at, ends_at))=(30, ["2027-01-11 10:00:00+01","2027-01-11 10:15:00+01")).
+[   428.1 ms] desk_call  > ROLLBACK
+[   428.2 ms] desk_call  ROLLBACK
+[   428.2 ms] -- (2) Same race, but the first receptionist cancels (ROLLBACK): the waiter now succeeds.
+[   430.3 ms] desk_ENU   > BEGIN
+[   430.5 ms] desk_ENU   BEGIN
+[   430.5 ms] desk_call  > BEGIN
+[   430.6 ms] desk_call  BEGIN
+[   430.6 ms] desk_ENU   > INSERT INTO appointment (patient_id, doctor_id, branch_id, scheduled_at, ends_at) VALUES (%s, 30, 1, '2027-01-11 10:00+01', timestamptz '2027-01-11 10:00+01' + interval '15 min') RETURNING appt_id
+[   431.5 ms] desk_ENU   appt_id
+                         -------
+                         894339 
+                         (1 row)
+[   431.5 ms] desk_call  > INSERT INTO appointment (patient_id, doctor_id, branch_id, scheduled_at, ends_at) VALUES (%s, 30, 1, '2027-01-11 10:00+01', timestamptz '2027-01-11 10:00+01' + interval '15 min') RETURNING appt_id   (sent; may block)
+[   836.0 ms] desk_ENU   > ROLLBACK
+[   837.4 ms] desk_ENU   ROLLBACK
+[   841.6 ms] desk_call  unblocked -> appt_id
+                         -------
+                         894340 
+                         (1 row)
+[   841.7 ms] desk_call  > COMMIT
+[   842.6 ms] desk_call  COMMIT
+[   842.6 ms] observer   > SELECT appt_id, patient_id, doctor_id, scheduled_at, status FROM appointment WHERE doctor_id = 30 AND scheduled_at = '2027-01-11 10:00+01'
+[   846.0 ms] observer   appt_id | patient_id | doctor_id | scheduled_at              | status
+                         --------+------------+-----------+---------------------------+-------
+                         894340  | 202        | 30        | 2027-01-11 10:00:00+01:00 | BOOKED
+                         (1 row)

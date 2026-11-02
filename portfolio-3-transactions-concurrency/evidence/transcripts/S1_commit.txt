@@ -1,0 +1,52 @@
+[     0.0 ms] ### S1_commit: Atomic consultation workflow - COMMIT
+[     8.2 ms] -- A consultation creates an encounter, diagnosis, prescription, lab order and invoice.
+[     8.2 ms] -- Either all five are recorded or none are.
+[     8.2 ms] doctor     > BEGIN
+[     8.5 ms] doctor     BEGIN
+[     8.5 ms] doctor     > INSERT INTO encounter (patient_id, doctor_id, branch_id, encounter_type, started_at, ended_at, complaint)
+                                      SELECT p.patient_id, 30, 1, 'OPD', now(), now() + interval '15 min', 'Fever and headache for 3 days'
+                                      FROM patient p WHERE hospital_no = 'USH-0000002'
+                                      RETURNING encounter_id
+[    19.9 ms] doctor     encounter_id
+                         ------------
+                         357224      
+                         (1 row)
+[    20.1 ms] doctor     > INSERT INTO diagnosis VALUES (%s, 'B50.9', true)
+[    21.9 ms] doctor     INSERT 0 1
+[    21.9 ms] doctor     > INSERT INTO prescription (encounter_id, issued_at) VALUES (%s, now()) RETURNING rx_id
+[    22.6 ms] doctor     rx_id 
+                         ------
+                         326314
+                         (1 row)
+[    22.6 ms] doctor     > INSERT INTO prescription_item (rx_id, line_no, drug_id, dose, frequency, duration_days, qty_prescribed)
+                                      VALUES (currval(pg_get_serial_sequence('hms.prescription','rx_id')), 1, 1, '1 tab', 'BD', 3, 6),
+                                             (currval(pg_get_serial_sequence('hms.prescription','rx_id')), 2, 2, '1 g', 'TDS', 3, 18)
+[    24.4 ms] doctor     INSERT 0 2
+[    24.4 ms] doctor     > INSERT INTO lab_order (encounter_id, ordered_at, priority) VALUES (%s, now(), 'URGENT')
+[    25.1 ms] doctor     INSERT 0 1
+[    25.1 ms] doctor     > INSERT INTO invoice (patient_id, encounter_id, branch_id, issued_at)
+                                      SELECT patient_id, encounter_id, branch_id, now() FROM encounter WHERE encounter_id = %s
+                                      RETURNING invoice_id
+[    26.2 ms] doctor     invoice_id
+                         ----------
+                         357223    
+                         (1 row)
+[    26.2 ms] doctor     > COMMIT
+[    26.6 ms] doctor     COMMIT
+[    26.6 ms] doctor     > SELECT e.encounter_id, d.icd10_code, count(DISTINCT pi.line_no) AS rx_lines,
+                                             count(DISTINCT o.order_id) AS lab_orders, count(DISTINCT i.invoice_id) AS invoices
+                                      FROM encounter e JOIN diagnosis d USING (encounter_id)
+                                      JOIN prescription rx USING (encounter_id) JOIN prescription_item pi USING (rx_id)
+                                      JOIN lab_order o USING (encounter_id) JOIN invoice i USING (encounter_id)
+                                      WHERE e.encounter_id = %s GROUP BY 1, 2
+[   107.7 ms] doctor     encounter_id | icd10_code | rx_lines | lab_orders | invoices
+                         -------------+------------+----------+------------+---------
+                         357224       | B50.9      | 2        | 1          | 1       
+                         (1 row)
+[   107.7 ms] doctor     > SELECT table_name, operation, row_pk, changed_by FROM audit_log WHERE row_pk = %s::text ORDER BY audit_id
+[   107.9 ms] doctor     table_name | operation | row_pk | changed_by  
+                         -----------+-----------+--------+-------------
+                         encounter  | I         | 357224 | casmironyeka
+                         diagnosis  | I         | 357224 | casmironyeka
+                         (2 rows)
+[   107.9 ms] -- All rows are durable after COMMIT; the audit trigger fired in the same transaction.

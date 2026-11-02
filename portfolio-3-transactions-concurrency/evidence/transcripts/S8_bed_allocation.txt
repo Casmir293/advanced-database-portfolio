@@ -1,0 +1,55 @@
+[     0.0 ms] ### S8_bed_allocation: Two nurses admit patients to the same ward: naive SELECT vs FOR UPDATE SKIP LOCKED
+[    32.7 ms] -- (1) NAIVE: both nurses look up 'first free bed' then insert. Patients [9039, 9120].
+[    32.7 ms] nurse_A    > BEGIN
+[    33.0 ms] nurse_A    BEGIN
+[    33.0 ms] nurse_B    > BEGIN
+[    33.2 ms] nurse_B    BEGIN
+[    33.2 ms] nurse_A    > SELECT bed_id, label FROM bed WHERE ward_id = 7 AND NOT is_occupied ORDER BY bed_id LIMIT 1
+[    35.0 ms] nurse_A    bed_id | label
+                         -------+------
+                         101    | B01  
+                         (1 row)
+[    35.2 ms] nurse_B    > SELECT bed_id, label FROM bed WHERE ward_id = 7 AND NOT is_occupied ORDER BY bed_id LIMIT 1
+[    36.8 ms] nurse_B    bed_id | label
+                         -------+------
+                         101    | B01  
+                         (1 row)
+[    37.1 ms] nurse_A    > INSERT INTO admission (patient_id, bed_id, admitted_at) VALUES (9039, 101, now())
+[    41.5 ms] nurse_A    INSERT 0 1
+[    41.5 ms] nurse_B    > INSERT INTO admission (patient_id, bed_id, admitted_at) VALUES (9120, 101, now())   (sent; may block)
+[   442.1 ms] nurse_A    > UPDATE bed SET is_occupied = true WHERE bed_id = 101
+[   443.5 ms] nurse_A    UPDATE 1
+[   443.5 ms] nurse_A    > COMMIT
+[   444.2 ms] nurse_A    COMMIT
+[   445.2 ms] nurse_B    unblocked -> ERROR 23P01: conflicting key value violates exclusion constraint "no_bed_overlap"
+                         DETAIL: Key (bed_id, tstzrange(admitted_at, COALESCE(discharged_at, 'infinity'::timestamp with time zone)))=(101, ["2026-11-02 18:01:01.486042+01",infinity)) conflicts with existing key (bed_id, tstzrange(admitted_at, COALESCE(discharged_at, 'infinity'::timestamp with time zone)))=(101, ["2026-11-02 18:01:01.485777+01",infinity)).
+[   445.3 ms] nurse_B    > ROLLBACK
+[   445.6 ms] nurse_B    ROLLBACK
+[   445.6 ms] -- Integrity held (the exclusion constraint stopped two patients in one bed), but nurse_B
+[   445.6 ms] -- waited and then had to start again - poor throughput at a busy maternity desk.
+[   450.1 ms] -- (2) admit_patient(): SELECT ... FOR UPDATE SKIP LOCKED - each nurse gets a different bed, no waiting.
+[   450.1 ms] nurse_A    > BEGIN
+[   450.3 ms] nurse_A    BEGIN
+[   450.3 ms] nurse_B    > BEGIN
+[   450.4 ms] nurse_B    BEGIN
+[   450.4 ms] nurse_A    > SELECT * FROM admit_patient(9039, 7::smallint)
+[   454.8 ms] nurse_A    admission_id | bed_id | bed_label
+                         -------------+--------+----------
+                         13102        | 101    | B01      
+                         (1 row)
+[   454.8 ms] nurse_B    > SELECT * FROM admit_patient(9120, 7::smallint)
+[   461.0 ms] nurse_B    admission_id | bed_id | bed_label
+                         -------------+--------+----------
+                         13103        | 102    | B02      
+                         (1 row)
+[   461.1 ms] nurse_A    > COMMIT
+[   461.5 ms] nurse_A    COMMIT
+[   461.5 ms] nurse_B    > COMMIT
+[   461.8 ms] nurse_B    COMMIT
+[   461.9 ms] observer   > SELECT a.admission_id, a.patient_id, b.label AS bed, a.admitted_at
+                                         FROM admission a JOIN bed b USING (bed_id) WHERE a.patient_id = ANY(ARRAY[9039, 9120]) AND a.discharged_at IS NULL
+[   462.8 ms] observer   admission_id | patient_id | bed | admitted_at                     
+                         -------------+------------+-----+---------------------------------
+                         13102        | 9039       | B01 | 2026-11-02 18:01:01.903130+01:00
+                         13103        | 9120       | B02 | 2026-11-02 18:01:01.903279+01:00
+                         (2 rows)

@@ -1,0 +1,39 @@
+[     0.0 ms] ### S3_savepoint: HMO remittance batch - SAVEPOINT isolates one bad line
+[    14.0 ms] -- An HMO remittance file pays 3 invoices [45, 99999999, 55].
+[    14.0 ms] -- Line 2 quotes an invoice number that does not exist in our system.
+[    14.0 ms] billing    > BEGIN
+[    14.0 ms] billing    BEGIN
+[    14.0 ms] billing    > SAVEPOINT line_1
+[    14.0 ms] billing    SAVEPOINT
+[    14.0 ms] billing    > SELECT post_payment(%s, 5000, 'HMO', %s)
+[    15.1 ms] billing    post_payment
+                         ------------
+                         PARTIAL     
+                         (1 row)
+[    15.1 ms] billing    > RELEASE SAVEPOINT line_1
+[    15.2 ms] billing    RELEASE
+[    15.2 ms] billing    > SAVEPOINT line_2
+[    15.2 ms] billing    SAVEPOINT
+[    15.2 ms] billing    > SELECT post_payment(%s, 5000, 'HMO', %s)
+[    15.3 ms] billing    ERROR P0001: Invoice 99999999 does not exist
+[    15.3 ms] billing    > ROLLBACK TO SAVEPOINT line_2
+[    15.3 ms] billing    ROLLBACK
+[    15.3 ms] -- Line 2 undone and queued for manual reconciliation; the transaction is still usable.
+[    15.3 ms] billing    > SAVEPOINT line_3
+[    15.4 ms] billing    SAVEPOINT
+[    15.4 ms] billing    > SELECT post_payment(%s, 5000, 'HMO', %s)
+[    15.6 ms] billing    post_payment
+                         ------------
+                         PARTIAL     
+                         (1 row)
+[    15.7 ms] billing    > RELEASE SAVEPOINT line_3
+[    15.7 ms] billing    RELEASE
+[    15.7 ms] billing    > COMMIT
+[    15.7 ms] billing    COMMIT
+[    15.7 ms] billing    > SELECT p.invoice_id, p.amount, p.reference, i.status FROM payment p JOIN invoice i USING (invoice_id) WHERE p.reference LIKE 'HMO-REMIT-%' ORDER BY 1
+[    22.1 ms] billing    invoice_id | amount  | reference     | status 
+                         -----------+---------+---------------+--------
+                         45         | 5000.00 | HMO-REMIT-001 | PARTIAL
+                         55         | 5000.00 | HMO-REMIT-003 | PARTIAL
+                         (2 rows)
+[    22.1 ms] -- Without savepoints, the single bad line would have aborted the whole remittance.
