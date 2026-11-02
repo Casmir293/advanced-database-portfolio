@@ -1,0 +1,92 @@
+SET search_path = hms, public;
+SET
+BEGIN;
+BEGIN
+--- T1 (entity integrity / candidate key): duplicate hospital number must be rejected
+INSERT INTO patient (hospital_no, first_name, last_name, date_of_birth, sex, reg_branch_id)
+VALUES ('USH-0000001', 'Test', 'Duplicate', '1990-01-01', 'F', 1);
+psql:sql/04_constraint_tests.sql:15: ERROR:  duplicate key value violates unique constraint "patient_hospital_no_key"
+DETAIL:  Key (hospital_no)=(USH-0000001) already exists.
+--- T2 (domain constraint): genotype must be one of AA, AS, AC, SS, SC
+INSERT INTO patient (hospital_no, first_name, last_name, date_of_birth, sex, genotype, reg_branch_id)
+VALUES ('USH-9999991', 'Test', 'Genotype', '1990-01-01', 'M', 'XY', 1);
+psql:sql/04_constraint_tests.sql:19: ERROR:  new row for relation "patient" violates check constraint "patient_genotype_check"
+DETAIL:  Failing row contains (60002, USH-9999991, Test, Genotype, 1990-01-01, M, null, null, null, null, XY, 1, 2026-11-02 17:37:14.443893+01).
+--- T3 (referential integrity): appointment for a doctor that does not exist
+INSERT INTO appointment (patient_id, doctor_id, branch_id, scheduled_at, ends_at)
+VALUES (1, 999999, 1, '2026-11-20 09:00+01', '2026-11-20 09:15+01');
+psql:sql/04_constraint_tests.sql:23: ERROR:  insert or update on table "appointment" violates foreign key constraint "appointment_doctor_id_fkey"
+DETAIL:  Key (doctor_id)=(999999) is not present in table "doctor".
+--- T4 (exclusion constraint): book a doctor into a slot that overlaps a live booking
+SELECT appt_id, doctor_id, scheduled_at, ends_at, status
+FROM appointment WHERE status = 'BOOKED' ORDER BY appt_id LIMIT 1 
+INSERT INTO appointment (patient_id, doctor_id, branch_id, scheduled_at, ends_at)
+SELECT 2, 30, branch_id, scheduled_at + interval '5 minutes', ends_at + interval '5 minutes'
+FROM appointment WHERE appt_id = 404211;
+psql:sql/04_constraint_tests.sql:30: ERROR:  conflicting key value violates exclusion constraint "no_doctor_double_booking"
+DETAIL:  Key (doctor_id, tstzrange(scheduled_at, ends_at))=(30, ["2026-11-02 08:05:00+01","2026-11-02 08:20:00+01")) conflicts with existing key (doctor_id, tstzrange(scheduled_at, ends_at))=(30, ["2026-11-02 08:00:00+01","2026-11-02 08:15:00+01")).
+--- T5 (partial exclusion): once that booking is CANCELLED the slot can be re-used (expect INSERT 0 1)
+UPDATE appointment SET status = 'CANCELLED' WHERE appt_id = 404211;
+UPDATE 1
+INSERT INTO appointment (patient_id, doctor_id, branch_id, scheduled_at, ends_at)
+SELECT 2, 30, branch_id, scheduled_at + interval '5 minutes', ends_at + interval '5 minutes'
+FROM appointment WHERE appt_id = 404211;
+INSERT 0 1
+--- T6 (CHECK): appointment longer than 2 hours
+INSERT INTO appointment (patient_id, doctor_id, branch_id, scheduled_at, ends_at)
+VALUES (1, 30, 1, '2027-01-04 08:00+01', '2027-01-04 12:00+01');
+psql:sql/04_constraint_tests.sql:40: ERROR:  new row for relation "appointment" violates check constraint "appt_length"
+DETAIL:  Failing row contains (414336, 1, 30, 1, 2027-01-04 08:00:00+01, 2027-01-04 12:00:00+01, BOOKED, null, 2026-11-02 17:37:14.443893+01).
+--- T7 (CHECK): pharmacy stock may never go negative
+UPDATE pharmacy_stock SET qty_on_hand = qty_on_hand - 1000000 WHERE branch_id = 2 AND drug_id = 1;
+psql:sql/04_constraint_tests.sql:43: ERROR:  new row for relation "pharmacy_stock" violates check constraint "pharmacy_stock_qty_on_hand_check"
+DETAIL:  Failing row contains (2, 1, -999400, 100).
+--- T8 (CHECK): cannot dispense more than was prescribed
+UPDATE prescription_item SET qty_dispensed = qty_prescribed + 1
+WHERE (rx_id, line_no) = (SELECT rx_id, line_no FROM prescription_item LIMIT 1);
+psql:sql/04_constraint_tests.sql:47: ERROR:  new row for relation "prescription_item" violates check constraint "prescription_item_check"
+DETAIL:  Failing row contains (1, 1, 4, 500 mg, BD, 5, 10, 11).
+--- T9 (partial unique index): an encounter may have only one PRIMARY diagnosis
+INSERT INTO diagnosis (encounter_id, icd10_code, is_primary)
+SELECT encounter_id, 'J06.9', true FROM diagnosis
+WHERE is_primary AND icd10_code <> 'J06.9' ORDER BY encounter_id LIMIT 1;
+psql:sql/04_constraint_tests.sql:52: ERROR:  duplicate key value violates unique constraint "one_primary_diagnosis"
+DETAIL:  Key (encounter_id)=(1) already exists.
+--- T10 (exclusion constraint): admit a second patient into a bed that is currently occupied
+INSERT INTO admission (patient_id, bed_id, admitted_at)
+SELECT 3, bed_id, now() FROM admission WHERE discharged_at IS NULL ORDER BY bed_id LIMIT 1;
+psql:sql/04_constraint_tests.sql:56: ERROR:  conflicting key value violates exclusion constraint "no_bed_overlap"
+DETAIL:  Key (bed_id, tstzrange(admitted_at, COALESCE(discharged_at, 'infinity'::timestamp with time zone)))=(3, ["2026-11-02 17:37:14.443893+01",infinity)) conflicts with existing key (bed_id, tstzrange(admitted_at, COALESCE(discharged_at, 'infinity'::timestamp with time zone)))=(3, ["2026-11-01 13:00:00+01",infinity)).
+--- T11 (unique / idempotency): the same payment reference cannot be posted twice
+INSERT INTO payment (invoice_id, amount, method, reference, paid_at)
+SELECT invoice_id, amount, method, reference, now() FROM payment ORDER BY payment_id LIMIT 1;
+psql:sql/04_constraint_tests.sql:60: ERROR:  duplicate key value violates unique constraint "payment_reference_key"
+DETAIL:  Key (reference)=(PAY-11233-1) already exists.
+--- T12 (FK, ON DELETE restrict): a patient with clinical history cannot be deleted
+DELETE FROM patient WHERE patient_id = 1;
+psql:sql/04_constraint_tests.sql:63: ERROR:  update or delete on table "patient" violates foreign key constraint "appointment_patient_id_fkey" on table "appointment"
+DETAIL:  Key (patient_id)=(1) is still referenced from table "appointment".
+--- T13 (trigger): changing a diagnosis writes an audit_log row with before/after images
+UPDATE diagnosis SET icd10_code = 'B50.9'
+WHERE (encounter_id, icd10_code) = (SELECT encounter_id, icd10_code FROM diagnosis
+                                    WHERE icd10_code = 'B54' AND is_primary ORDER BY encounter_id LIMIT 1);
+UPDATE 1
+SELECT table_name, operation, row_pk, old_row->>'icd10_code' AS old_code, new_row->>'icd10_code' AS new_code
+FROM audit_log ORDER BY audit_id DESC LIMIT 1;
+ table_name | operation | row_pk | old_code | new_code 
+------------+-----------+--------+----------+----------
+ diagnosis  | U         | 21     | B54      | B50.9
+(1 row)
+
+--- T14 (view): invoice totals are derived, never stored
+SELECT * FROM invoice_summary WHERE status = 'PARTIAL' ORDER BY invoice_id LIMIT 3;
+ invoice_id | patient_id | branch_id |       issued_at        | status  | total_amount | amount_paid | balance 
+------------+------------+-----------+------------------------+---------+--------------+-------------+---------
+          7 |       2665 |         1 | 2023-01-02 08:19:00+01 | PARTIAL |      8735.00 |     4367.50 | 4367.50
+         15 |      14483 |         2 | 2023-01-02 08:31:00+01 | PARTIAL |     11700.00 |     5850.00 | 5850.00
+         31 |      37701 |         1 | 2023-01-02 09:06:00+01 | PARTIAL |     14250.00 |     7125.00 | 7125.00
+(3 rows)
+
+ROLLBACK;
+ROLLBACK
+--- all test changes rolled back
