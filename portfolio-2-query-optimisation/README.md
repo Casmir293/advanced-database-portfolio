@@ -1,7 +1,7 @@
 # Portfolio 2 – Query Processing and Optimisation
 
 **Case study:** Udoka Specialist Hospital · **DBMS:** PostgreSQL 16.15 on an Apple M5 laptop (SSD, default configuration)
-**Data:** the 4.9 M-row data set from Portfolio 1 (370 k encounters, 430 k appointments, 1.39 M invoice lines)
+**Data:** the 4.8 M-row data set from Portfolio 1 (357 k encounters, 414 k appointments, 1.31 M invoice lines)
 
 ## 1. Method
 
@@ -31,10 +31,10 @@ All plans are in [`evidence/plans/`](evidence/plans/), sample result sets in
 |---|---|---|---:|---:|---:|
 | **Q1** Patient history (doctor) | Seq scan of `encounter`, plus a seq scan of `prescription` and `lab_order` **for every encounter** in the correlated subqueries. Foreign keys are not indexed automatically in PostgreSQL | Indexes on `encounter(patient_id, started_at DESC)`, `prescription(encounter_id)`, `lab_order(encounter_id)` | 385.53 | 0.55 | **699×** |
 | **Q2** Doctor's clinic list (front desk) | `scheduled_at::date = …` wraps the column in a function, so no index can be used (non-sargable). The double-booking GiST index exists but is *partial* and the query doesn't match its predicate | Rewrite as a half-open range `>= day AND < day+1`; composite B-tree `(doctor_id, scheduled_at)` with the equality column first | 7.21 | 0.16 | **45×** |
-| **Q3** Monthly revenue (management) | Hash join of 1.39 M invoice lines with a full year of invoices, then aggregation, on every dashboard refresh | Materialized view `mv_monthly_revenue` with a unique index, so it can be `REFRESH … CONCURRENTLY`ed nightly | 128.83 | 0.39 | **332×** |
-| **Q4** Abnormal lab results, last 7 days (clinicians) | Parallel seq scan over 401 k results to find about 1 k rows | Partial index `lab_result(resulted_at) WHERE abnormal_flag <> 'N'`, plus `random_page_cost = 1.1` for SSD (see below) | 10.44 | 2.91 | **3.6×** |
+| **Q3** Monthly revenue (management) | Hash join of 1.31 M invoice lines with a full year of invoices, then aggregation, on every dashboard refresh | Materialized view `mv_monthly_revenue` with a unique index, so it can be `REFRESH … CONCURRENTLY`ed nightly | 128.83 | 0.39 | **332×** |
+| **Q4** Abnormal lab results, last 7 days (clinicians) | Parallel seq scan over 378 k results to find about 1 k rows | Partial index `lab_result(resulted_at) WHERE abnormal_flag <> 'N'`, plus `random_page_cost = 1.1` for SSD (see below) | 10.44 | 2.91 | **3.6×** |
 | **Q5** Search by part of a name (records) | `ILIKE '%chukw%'` has a leading wildcard, so a B-tree is useless and the whole table is scanned | `pg_trgm` GIN indexes; the plan does a **BitmapAnd** of both name indexes | 10.04 | 0.54 | **19×** |
-| **Q6** Largest unpaid balances (billing) | The `invoice_summary` view aggregates *all* 1.39 M lines and 345 k payments before the branch/age/balance filter is applied | Rewrite: filter unpaid invoices first (partial index `WHERE status IN ('OPEN','PARTIAL')`), then sum each one's lines/payments in `LATERAL` subqueries | 342.11 | 28.62 | **12×** |
+| **Q6** Largest unpaid balances (billing) | The `invoice_summary` view aggregates *all* 1.31 M lines and 334 k payments before the branch/age/balance filter is applied | Rewrite: filter unpaid invoices first (partial index `WHERE status IN ('OPEN','PARTIAL')`), then sum each one's lines/payments in `LATERAL` subqueries | 342.11 | 28.62 | **12×** |
 | **Q7** Hypertension recall list (chronic care) | `IN` + `NOT IN` subqueries, with full scans of `encounter` and `diagnosis` | `EXISTS` / `NOT EXISTS` (semi- and anti-join), index on `diagnosis(icd10_code)` | 56.00 | 10.90 | **5.1×** |
 | **Q8** Top-5 diagnoses per branch per quarter (public health) | The hash table for 188 k encounters didn't fit in `work_mem = 4MB`, so it split into 2 batches and spilled to temp files | `SET work_mem = '64MB'` for the reporting session, giving 1 batch and no temp I/O | 87.65 | 68.20 | **1.3×** |
 
@@ -90,7 +90,7 @@ between refreshes. That is acceptable for a monthly revenue dashboard, but not f
 
 | # | Experiment | Observation |
 |---|---|---|
-| E1 | Same B-tree, 1 day vs 1 year of invoices | 1 day (387 rows): **Index Scan**, 0.11 ms. 1 year (99 k rows, 27% of the table): **Bitmap Heap Scan**, 8.6 ms. The planner switches access path based on estimated selectivity |
+| E1 | Same B-tree, 1 day vs 1 year of invoices | 1 day (387 rows): **Index Scan**, 0.11 ms. 1 year (99 k rows, 28% of the table): **Bitmap Heap Scan**, 8.6 ms. The planner switches access path based on estimated selectivity |
 | E2 | BRIN vs B-tree on `invoice.issued_at` | BRIN is **24 kB vs 7.7 MB**, but `pg_stats.correlation` is only 0.11, because the generator inserted OPD, emergency and inpatient invoices as three separate time-ordered runs. BRIN therefore read 758 lossy blocks and threw away 73 k rows on recheck. **BRIN pays off only when physical order follows the column**, e.g. an append-only audit log |
 | E3 | `NOT IN` with a NULL in the subquery | Appointments in October 2026 without an encounter: `NOT IN` returns **0** (wrong), `NOT EXISTS` returns **2,063** (right). `encounter.appt_id` is NULL for emergency visits, and `x NOT IN (…, NULL)` is never true. My first attempt over all data never finished: it was cancelled after 10 minutes (see E4) |
 | E4 | `NOT IN` when the hash doesn't fit in memory | With `work_mem = 64kB`: `NOT IN` becomes a plain SubPlan re-run 1,011 times, **4,001 ms**. `NOT EXISTS` becomes an anti-join using an index-only scan, **7.8 ms** |

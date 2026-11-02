@@ -2,18 +2,18 @@ SET
     table_name     | approx_rows | total_size 
 -------------------+-------------+------------
  invoice_line      | 1,308,413   | 142 MB
- prescription_item | 562,400     | 54 MB
- diagnosis         | 448,372     | 48 MB
- appointment       | 414,332     | 78 MB
- lab_result        | 378,337     | 57 MB
- encounter         | 357,221     | 125 MB
- invoice           | 357,221     | 68 MB
- payment           | 334,095     | 46 MB
- prescription      | 326,311     | 28 MB
- lab_order         | 157,582     | 15 MB
+ prescription_item | 562,408     | 54 MB
+ diagnosis         | 448,374     | 62 MB
+ appointment       | 414,333     | 99 MB
+ lab_result        | 378,337     | 60 MB
+ encounter         | 357,225     | 136 MB
+ invoice           | 357,223     | 69 MB
+ payment           | 334,099     | 53 MB
+ prescription      | 326,315     | 35 MB
+ lab_order         | 157,584     | 18 MB
  emergency_contact | 78,000      | 7448 kB
  patient_coverage  | 63,000      | 5696 kB
- patient           | 60,000      | 11 MB
+ patient           | 60,000      | 13 MB
  admission         | 13,098      | 2216 kB
  patient_allergy   | 8,802       | 968 kB
  on_call_roster    | 660         | 112 kB
@@ -25,9 +25,9 @@ SET
  drug              | 30          | 72 kB
  department        | 23          | 72 kB
  lab_test          | 15          | 56 kB
+ audit_log         | 14          | 32 kB
  ward              | 9           | 72 kB
  hmo               | 4           | 88 kB
  branch            | 3           | 72 kB
- audit_log         | 0           | 32 kB
 (28 rows)
 

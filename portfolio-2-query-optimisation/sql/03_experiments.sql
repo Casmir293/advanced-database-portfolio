@@ -45,7 +45,7 @@ SELECT count(*) AS not_exists_result
 FROM appointment a
 WHERE a.scheduled_at >= '2026-10-01' AND a.scheduled_at < '2026-11-01'
   AND NOT EXISTS (SELECT 1 FROM encounter e WHERE e.appt_id = a.appt_id);
--- (A first attempt ran this over all 430k appointments: the 370k-row subquery did not fit
+-- (A first attempt ran this over all 414k appointments: the 357k-row subquery did not fit
 --  in work_mem, PostgreSQL fell back to a plain SubPlan and the query was cancelled after 10 min.)
 
 \echo '=== E4  NOT IN pitfall 2: when the subquery hash does not fit in work_mem ==='

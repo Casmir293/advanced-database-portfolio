@@ -171,7 +171,7 @@ either the PK or declared UNIQUE. So the determinants are all keys, and the sche
 
 ## 6. Data set
 
-[`sql/03_generate_data.sql`](sql/03_generate_data.sql) generates **about 4.9 million rows** of synthetic but
+[`sql/03_generate_data.sql`](sql/03_generate_data.sql) generates **about 4.8 million rows** of synthetic but
 realistic activity for Jan 2023 – Nov 2026. It is fully deterministic (`setseed`), so anyone can reproduce
 it. Realism rules built into the generator:
 
@@ -184,19 +184,19 @@ it. Realism rules built into the generator:
 
 | table | rows | | table | rows |
 |---|---:|---|---|---:|
-| invoice_line | 1.39 M | | lab_order | 173 k |
-| prescription_item | 605 k | | emergency_contact | 78 k |
-| diagnosis | 463 k | | patient_coverage | 63 k |
-| appointment | 430 k | | patient | 60 k |
-| lab_result | 401 k | | admission | 13 k |
-| encounter / invoice | 370 k each | | staff | 290 (60 doctors) |
+| invoice_line | 1.31 M | | lab_order | 158 k |
+| prescription_item | 562 k | | emergency_contact | 78 k |
+| diagnosis | 448 k | | patient_coverage | 63 k |
+| appointment | 414 k | | patient | 60 k |
+| lab_result | 378 k | | admission | 13 k |
+| encounter / invoice | 357 k each | | staff | 290 (60 doctors) |
 
 ## 7. How to reproduce
 
 ```bash
 brew install postgresql@16 && brew services start postgresql@16
 export PATH=/opt/homebrew/opt/postgresql@16/bin:$PATH
-./build_database.sh                                     # ~45 s: schema + reference data + 4.9 M rows
+./build_database.sh                                     # ~45 s: schema + reference data + 4.8 M rows
 psql -X -e -d udoka_hms -f sql/04_constraint_tests.sql  # constraint tests
 ../.venv/bin/python diagrams/generate_er.py             # redraw ER diagram (needs graphviz)
 ```
