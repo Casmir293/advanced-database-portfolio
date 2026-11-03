@@ -20,13 +20,13 @@ clinics in Nsukka and Awka. All five portfolios use this one organisation.
 
 ## Portfolio map
 
-| # | Activity | Folder | Technology |
-|---|---|---|---|
-| 1 | Database design and modelling | [portfolio-1-database-design](portfolio-1-database-design/) | PostgreSQL 16, Graphviz |
-| 2 | Query processing and optimisation | [portfolio-2-query-optimisation](portfolio-2-query-optimisation/) | PostgreSQL `EXPLAIN (ANALYZE, BUFFERS)` |
-| 3 | Transactions and concurrency | [portfolio-3-transactions-concurrency](portfolio-3-transactions-concurrency/) | PostgreSQL + Python (psycopg) |
-| 4 | NoSQL and advanced data models | [portfolio-4-nosql](portfolio-4-nosql/) | MongoDB 9, Redis |
-| 5 | Distributed and cloud databases | [portfolio-5-distributed-cloud](portfolio-5-distributed-cloud/) | PostgreSQL streaming replication, postgres_fdw sharding, MongoDB replica set |
+| #   | Activity                          | Folder                                                                        | Technology                                                                   |
+| --- | --------------------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| 1   | Database design and modelling     | [portfolio-1-database-design](portfolio-1-database-design/)                   | PostgreSQL 16, Graphviz                                                      |
+| 2   | Query processing and optimisation | [portfolio-2-query-optimisation](portfolio-2-query-optimisation/)             | PostgreSQL `EXPLAIN (ANALYZE, BUFFERS)`                                      |
+| 3   | Transactions and concurrency      | [portfolio-3-transactions-concurrency](portfolio-3-transactions-concurrency/) | PostgreSQL + Python (psycopg)                                                |
+| 4   | NoSQL and advanced data models    | [portfolio-4-nosql](portfolio-4-nosql/)                                       | MongoDB 9, Redis                                                             |
+| 5   | Distributed and cloud databases   | [portfolio-5-distributed-cloud](portfolio-5-distributed-cloud/)               | PostgreSQL streaming replication, postgres_fdw sharding, MongoDB replica set |
 
 ## Environment
 
@@ -46,11 +46,17 @@ cd portfolio-1-database-design && ./build_database.sh
 **AI use declaration.** Claude Code (Anthropic, model Claude Opus 5.5) was used to generate most of the
 SQL, PL/pgSQL, Python and MongoDB scripts, to run them on my machine, to diagnose the errors recorded in
 each README's "lessons" section, and to draft the documentation. Review and verification by the student:
-_[to be completed by the student: what was re-run, checked and changed]_.
+I re-ran all scripts myself, reviewed all the plans and outputs, made updates/changes where needed and can
+explain each of the portfolio myself. All results quoted here come from executed runs whose raw output is
+committed in the repository's evidence folders.
 
 ## References
 
-Elmasri & Navathe (2016) *Fundamentals of Database Systems*, 7th edn · Kleppmann (2017) *Designing
-Data-Intensive Applications* · Ports & Grittner (2012) "Serializable Snapshot Isolation in PostgreSQL",
+Elmasri & Navathe (2016) _Fundamentals of Database Systems_, 7th edn · Kleppmann (2017) _Designing
+Data-Intensive Applications_ · Ports & Grittner (2012) "Serializable Snapshot Isolation in PostgreSQL",
 PVLDB 5(12) · PostgreSQL 16, MongoDB and Redis official documentation · Nigeria Data Protection Act 2023 ·
 WHO ICD-10 (2019).
+
+Anthropic (2026). Claude (Opus 5.5 model) [Large language model].
+https://claude.ai. Used to help research, draft and format this report;
+the content was reviewed and edited by the author.
